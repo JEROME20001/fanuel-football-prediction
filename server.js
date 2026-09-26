@@ -1,4 +1,3 @@
-```js
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -8,12 +7,16 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
-const TOKEN = process.env.SPORTMONKS_API_TOKEN || "";
-const API_BASE = "https://api.sportmonks.com/v3/football";
+const API_KEY = process.env.API_FOOTBALL_KEY || "";
+const API_BASE = "https://v3.football.api-sports.io";
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+
+/* ================================
+   DATABASE
+================================ */
 
 function loadDB() {
   try {
@@ -48,6 +51,10 @@ function saveDB(db) {
 
 const db = loadDB();
 
+/* ================================
+   CACHE
+================================ */
+
 const cache = new Map();
 
 function cacheGet(key) {
@@ -66,37 +73,31 @@ function cacheGet(key) {
 function cacheSet(key, value, minutes) {
   cache.set(key, {
     value,
-    expires:
-      Date.now() +
-      minutes * 60 * 1000
+    expires: Date.now() + minutes * 60 * 1000
   });
 }
 
+/* ================================
+   API-FOOTBALL REQUEST
+================================ */
+
 async function apiRequest(endpoint) {
-  if (!TOKEN) {
+  if (!API_KEY) {
     throw new Error(
-      "SPORTMONKS_API_TOKEN haijawekwa kwenye Render."
+      "API_FOOTBALL_KEY haijawekwa kwenye Render."
     );
   }
 
-  const separator =
-    endpoint.includes("?")
-      ? "&"
-      : "?";
-
-  const url =
-    API_BASE +
-    endpoint +
-    separator +
-    "api_token=" +
-    encodeURIComponent(TOKEN);
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Accept: "application/json"
+  const response = await fetch(
+    API_BASE + endpoint,
+    {
+      method: "GET",
+      headers: {
+        "x-apisports-key": API_KEY,
+        "Accept": "application/json"
+      }
     }
-  });
+  );
 
   const text = await response.text();
 
@@ -106,16 +107,28 @@ async function apiRequest(endpoint) {
     data = JSON.parse(text);
   } catch {
     throw new Error(
-      "Sportmonks ilirudisha response isiyo JSON. HTTP " +
+      "API-Football ilirudisha response isiyo JSON. HTTP " +
       response.status
     );
   }
 
   if (!response.ok) {
+    const message =
+      Array.isArray(data.errors)
+        ? data.errors.join(", ")
+        : data.message ||
+          "API-Football HTTP " +
+          response.status;
+
+    throw new Error(message);
+  }
+
+  if (
+    Array.isArray(data.errors) &&
+    data.errors.length > 0
+  ) {
     throw new Error(
-      data.message ||
-      "Sportmonks HTTP " +
-      response.status
+      data.errors.join(", ")
     );
   }
 
@@ -127,7 +140,7 @@ async function apiRequest(endpoint) {
 ================================ */
 
 async function getFixtures(date) {
-  const cacheKey = "date:" + date;
+  const cacheKey = "fixtures:" + date;
 
   const cached = cacheGet(cacheKey);
 
@@ -135,47 +148,34 @@ async function getFixtures(date) {
     return cached;
   }
 
-  let page = 1;
-  let all = [];
+  const response =
+    await apiRequest(
+      "/fixtures?date=" +
+      encodeURIComponent(date)
+    );
 
-  while (true) {
-    const endpoint =
-      "/fixtures/date/" +
-      date +
-      "?per_page=50&page=" +
-      page +
-      "&include=participants;league;season";
+  const fixtures =
+    Array.isArray(response.response)
+      ? response.response
+      : [];
 
-    const response =
-      await apiRequest(endpoint);
-
-    const fixtures =
-      Array.isArray(response.data)
-        ? response.data
-        : [];
-
-    all = all.concat(fixtures);
-
-    if (
-      !response.pagination ||
-      response.pagination.has_more !== true ||
-      fixtures.length === 0
-    ) {
-      break;
-    }
-
-    page++;
-
-    if (page > 20) {
-      break;
-    }
+  if (!fixtures.length) {
+    return {
+      ok: true,
+      provider: "API-Football",
+      date,
+      count: 0,
+      matches: [],
+      message: "Fixtures not found"
+    };
   }
 
-  const matches = all.map(formatFixture);
+  const matches =
+    fixtures.map(formatFixture);
 
   const result = {
     ok: true,
-    provider: "Sportmonks",
+    provider: "API-Football",
     date,
     count: matches.length,
     matches
@@ -195,100 +195,74 @@ async function getFixtures(date) {
 ================================ */
 
 function formatFixture(fixture) {
-  const participants =
-    Array.isArray(fixture.participants)
-      ? fixture.participants
-      : [];
+  const f =
+    fixture.fixture || {};
 
-  let home = null;
-  let away = null;
+  const teams =
+    fixture.teams || {};
 
-  participants.forEach(team => {
-    const location =
-      team.meta &&
-      team.meta.location;
-
-    if (location === "home") {
-      home = team;
-    }
-
-    if (location === "away") {
-      away = team;
-    }
-  });
-
-  if (!home && participants[0]) {
-    home = participants[0];
-  }
-
-  if (!away && participants[1]) {
-    away = participants[1];
-  }
+  const league =
+    fixture.league || {};
 
   return {
-    id: fixture.id,
+    id: f.id,
 
     name:
-      fixture.name ||
-      "Unknown Match",
+      `${teams.home?.name || "Home"} vs ` +
+      `${teams.away?.name || "Away"}`,
 
     starting_at:
-      fixture.starting_at,
+      f.date || null,
 
     homeTeam: {
-      id: home ? home.id : null,
+      id:
+        teams.home?.id || null,
+
       name:
-        home
-          ? home.name
-          : "Home Team",
+        teams.home?.name || "Home Team",
 
       logo:
-        home
-          ? home.image_path || null
-          : null
+        teams.home?.logo || null
     },
 
     awayTeam: {
-      id: away ? away.id : null,
+      id:
+        teams.away?.id || null,
+
       name:
-        away
-          ? away.name
-          : "Away Team",
+        teams.away?.name || "Away Team",
 
       logo:
-        away
-          ? away.image_path || null
-          : null
+        teams.away?.logo || null
     },
 
     league: {
       id:
-        fixture.league
-          ? fixture.league.id
-          : fixture.league_id,
+        league.id || null,
 
       name:
-        fixture.league
-          ? fixture.league.name
-          : "Unknown League"
+        league.name || "Unknown League",
+
+      country:
+        league.country || ""
     },
 
     season:
-      fixture.season || null,
+      league.season || null,
 
-    state:
-      fixture.state || null,
+    status:
+      f.status || null,
 
-    result_info:
-      fixture.result_info || null,
+    venue:
+      f.venue || null,
 
-    starting_at_timestamp:
-      fixture.starting_at_timestamp || null
+    raw:
+      fixture
   };
 }
 
 /* ================================
-   GET FIXTURE BY ID
+   GET FIXTURE
 ================================ */
 
 async function getFixture(id) {
@@ -304,28 +278,33 @@ async function getFixture(id) {
 
   const response =
     await apiRequest(
-      "/fixtures/" +
-      encodeURIComponent(id) +
-      "?include=participants;league;season;scores"
+      "/fixtures?id=" +
+      encodeURIComponent(id)
     );
 
-  if (!response.data) {
+  if (
+    !Array.isArray(response.response) ||
+    !response.response.length
+  ) {
     throw new Error(
       "Fixture haijapatikana."
     );
   }
 
+  const fixture =
+    response.response[0];
+
   cacheSet(
     cacheKey,
-    response.data,
+    fixture,
     30
   );
 
-  return response.data;
+  return fixture;
 }
 
 /* ================================
-   TEAM HISTORY
+   TEAM LAST MATCHES
 ================================ */
 
 async function getTeamHistory(teamId) {
@@ -333,36 +312,8 @@ async function getTeamHistory(teamId) {
     return [];
   }
 
-  const end =
-    new Date();
-
-  const start =
-    new Date(
-      end.getTime() -
-      120 *
-      24 *
-      60 *
-      60 *
-      1000
-    );
-
-  const startDate =
-    start
-      .toISOString()
-      .slice(0, 10);
-
-  const endDate =
-    end
-      .toISOString()
-      .slice(0, 10);
-
   const cacheKey =
-    "history:" +
-    teamId +
-    ":" +
-    startDate +
-    ":" +
-    endDate;
+    "team-last:" + teamId;
 
   const cached =
     cacheGet(cacheKey);
@@ -371,22 +322,16 @@ async function getTeamHistory(teamId) {
     return cached;
   }
 
-  const endpoint =
-    "/fixtures/between/" +
-    startDate +
-    "/" +
-    endDate +
-    "/" +
-    teamId +
-    "?per_page=50&page=1" +
-    "&include=participants;scores;league";
-
   const response =
-    await apiRequest(endpoint);
+    await apiRequest(
+      "/fixtures?team=" +
+      encodeURIComponent(teamId) +
+      "&last=10"
+    );
 
   const fixtures =
-    Array.isArray(response.data)
-      ? response.data
+    Array.isArray(response.response)
+      ? response.response
       : [];
 
   cacheSet(
@@ -399,69 +344,6 @@ async function getTeamHistory(teamId) {
 }
 
 /* ================================
-   SCORE
-================================ */
-
-function getScore(
-  fixture,
-  homeId,
-  awayId
-) {
-  if (
-    !Array.isArray(
-      fixture.scores
-    )
-  ) {
-    return null;
-  }
-
-  let home = null;
-  let away = null;
-
-  fixture.scores.forEach(score => {
-    const participant =
-      score.participant_id;
-
-    const goals =
-      score.score &&
-      score.score.goals;
-
-    if (
-      goals === undefined ||
-      goals === null
-    ) {
-      return;
-    }
-
-    if (
-      String(participant) ===
-      String(homeId)
-    ) {
-      home = Number(goals);
-    }
-
-    if (
-      String(participant) ===
-      String(awayId)
-    ) {
-      away = Number(goals);
-    }
-  });
-
-  if (
-    Number.isFinite(home) &&
-    Number.isFinite(away)
-  ) {
-    return {
-      home,
-      away
-    };
-  }
-
-  return null;
-}
-
-/* ================================
    TEAM FORM
 ================================ */
 
@@ -471,86 +353,75 @@ function teamForm(
 ) {
   const games = [];
 
-  fixtures
-    .sort(
-      (a, b) =>
-        new Date(b.starting_at) -
-        new Date(a.starting_at)
-    )
-    .forEach(fixture => {
-      const participants =
-        fixture.participants || [];
+  fixtures.forEach(fixture => {
+    const teams =
+      fixture.teams || {};
 
-      let home = null;
-      let away = null;
+    const home =
+      teams.home;
 
-      participants.forEach(team => {
-        const loc =
-          team.meta &&
-          team.meta.location;
+    const away =
+      teams.away;
 
-        if (loc === "home") {
-          home = team;
-        }
+    const goals =
+      fixture.goals || {};
 
-        if (loc === "away") {
-          away = team;
-        }
-      });
+    if (
+      !home ||
+      !away ||
+      goals.home === null ||
+      goals.away === null ||
+      goals.home === undefined ||
+      goals.away === undefined
+    ) {
+      return;
+    }
 
-      if (!home || !away) {
-        return;
-      }
+    const isHome =
+      String(home.id) ===
+      String(teamId);
 
-      const score =
-        getScore(
-          fixture,
-          home.id,
-          away.id
-        );
+    const isAway =
+      String(away.id) ===
+      String(teamId);
 
-      if (!score) {
-        return;
-      }
+    if (!isHome && !isAway) {
+      return;
+    }
 
-      const isHome =
-        String(home.id) ===
-        String(teamId);
+    const gf =
+      isHome
+        ? Number(goals.home)
+        : Number(goals.away);
 
-      const isAway =
-        String(away.id) ===
-        String(teamId);
+    const ga =
+      isHome
+        ? Number(goals.away)
+        : Number(goals.home);
 
-      if (!isHome && !isAway) {
-        return;
-      }
+    if (
+      !Number.isFinite(gf) ||
+      !Number.isFinite(ga)
+    ) {
+      return;
+    }
 
-      const gf =
-        isHome
-          ? score.home
-          : score.away;
+    let result = "D";
 
-      const ga =
-        isHome
-          ? score.away
-          : score.home;
+    if (gf > ga) {
+      result = "W";
+    }
 
-      let result = "D";
+    if (gf < ga) {
+      result = "L";
+    }
 
-      if (gf > ga) {
-        result = "W";
-      }
-
-      if (gf < ga) {
-        result = "L";
-      }
-
-      games.push({
-        result,
-        gf,
-        ga
-      });
+    games.push({
+      result,
+      gf,
+      ga
     });
+  });
 
   const last =
     games.slice(0, 5);
@@ -571,40 +442,29 @@ function teamForm(
   let wins = 0;
   let draws = 0;
   let losses = 0;
-  let gf = 0;
-  let ga = 0;
+  let goalsFor = 0;
+  let goalsAgainst = 0;
 
   last.forEach(game => {
-    gf += game.gf;
-    ga += game.ga;
+    goalsFor += game.gf;
+    goalsAgainst += game.ga;
 
-    if (game.result === "W") {
-      wins++;
-    }
-
-    if (game.result === "D") {
-      draws++;
-    }
-
-    if (game.result === "L") {
-      losses++;
-    }
+    if (game.result === "W") wins++;
+    if (game.result === "D") draws++;
+    if (game.result === "L") losses++;
   });
 
   return {
     matches: last.length,
-
     wins,
-
     draws,
-
     losses,
 
     goalsFor:
-      gf / last.length,
+      goalsFor / last.length,
 
     goalsAgainst:
-      ga / last.length,
+      goalsAgainst / last.length,
 
     points:
       wins * 3 + draws,
@@ -623,21 +483,14 @@ function teamForm(
 function factorial(n) {
   let result = 1;
 
-  for (
-    let i = 2;
-    i <= n;
-    i++
-  ) {
+  for (let i = 2; i <= n; i++) {
     result *= i;
   }
 
   return result;
 }
 
-function poisson(
-  lambda,
-  goals
-) {
+function poisson(lambda, goals) {
   return (
     Math.exp(-lambda) *
     Math.pow(lambda, goals) /
@@ -652,29 +505,14 @@ function probabilities(
   let home = 0;
   let draw = 0;
   let away = 0;
-
   let over25 = 0;
   let btts = 0;
 
-  for (
-    let h = 0;
-    h <= 8;
-    h++
-  ) {
-    for (
-      let a = 0;
-      a <= 8;
-      a++
-    ) {
+  for (let h = 0; h <= 8; h++) {
+    for (let a = 0; a <= 8; a++) {
       const p =
-        poisson(
-          homeLambda,
-          h
-        ) *
-        poisson(
-          awayLambda,
-          a
-        );
+        poisson(homeLambda, h) *
+        poisson(awayLambda, a);
 
       if (h > a) {
         home += p;
@@ -684,38 +522,24 @@ function probabilities(
         away += p;
       }
 
-      if (
-        h + a >= 3
-      ) {
+      if (h + a >= 3) {
         over25 += p;
       }
 
-      if (
-        h >= 1 &&
-        a >= 1
-      ) {
+      if (h >= 1 && a >= 1) {
         btts += p;
       }
     }
   }
 
   const total =
-    home +
-    draw +
-    away;
+    home + draw + away;
 
   return {
-    home:
-      home / total,
-
-    draw:
-      draw / total,
-
-    away:
-      away / total,
-
+    home: home / total,
+    draw: draw / total,
+    away: away / total,
     over25,
-
     btts
   };
 }
@@ -741,25 +565,52 @@ function predict(
       homeForm.goalsAgainst
     ) / 2;
 
-  // Home advantage
+  /*
+    HOME ADVANTAGE
+  */
+
   homeLambda *= 1.08;
+
+  /*
+    FORM ADJUSTMENT
+  */
+
+  const homeFormFactor =
+    homeForm.points /
+    Math.max(
+      1,
+      homeForm.matches * 3
+    );
+
+  const awayFormFactor =
+    awayForm.points /
+    Math.max(
+      1,
+      awayForm.matches * 3
+    );
+
+  if (homeForm.matches > 0) {
+    homeLambda *=
+      0.90 +
+      homeFormFactor * 0.20;
+  }
+
+  if (awayForm.matches > 0) {
+    awayLambda *=
+      0.90 +
+      awayFormFactor * 0.20;
+  }
 
   homeLambda =
     Math.max(
       0.25,
-      Math.min(
-        homeLambda,
-        4
-      )
+      Math.min(homeLambda, 4)
     );
 
   awayLambda =
     Math.max(
       0.20,
-      Math.min(
-        awayLambda,
-        4
-      )
+      Math.min(awayLambda, 4)
     );
 
   const p =
@@ -784,43 +635,31 @@ function predict(
     ) / 10;
 
   let pick = "Draw";
-  let confidence =
-    drawPct;
+  let confidence = drawPct;
 
-  if (
-    homePct >
-    confidence
-  ) {
+  if (homePct > confidence) {
     pick = "Home Win";
-    confidence =
-      homePct;
+    confidence = homePct;
   }
 
-  if (
-    awayPct >
-    confidence
-  ) {
+  if (awayPct > confidence) {
     pick = "Away Win";
-    confidence =
-      awayPct;
+    confidence = awayPct;
   }
 
   return {
     fixtureId:
-      fixture.id,
+      fixture.fixture.id,
 
     match:
-      fixture.name,
+      `${fixture.teams.home.name} vs ` +
+      `${fixture.teams.away.name}`,
 
     homeTeam:
-      fixture.participants
-        ? fixture.participants[0]?.name
-        : "Home",
+      fixture.teams.home.name,
 
     awayTeam:
-      fixture.participants
-        ? fixture.participants[1]?.name
-        : "Away",
+      fixture.teams.away.name,
 
     pick,
 
@@ -860,11 +699,8 @@ function predict(
     },
 
     form: {
-      home:
-        homeForm,
-
-      away:
-        awayForm
+      home: homeForm,
+      away: awayForm
     },
 
     model:
@@ -879,59 +715,35 @@ function predict(
 }
 
 /* ================================
-   ANALYZE
+   ANALYZE FIXTURE
 ================================ */
 
-async function analyze(
-  fixtureId
-) {
+async function analyze(fixtureId) {
   const fixture =
-    await getFixture(
-      fixtureId
-    );
+    await getFixture(fixtureId);
 
-  const participants =
-    fixture.participants || [];
+  const teams =
+    fixture.teams || {};
 
-  let home = null;
-  let away = null;
+  const home =
+    teams.home;
 
-  participants.forEach(team => {
-    const location =
-      team.meta &&
-      team.meta.location;
+  const away =
+    teams.away;
 
-    if (location === "home") {
-      home = team;
-    }
-
-    if (location === "away") {
-      away = team;
-    }
-  });
-
-  if (
-    !home ||
-    !away
-  ) {
+  if (!home || !away) {
     throw new Error(
-      "Sportmonks haikurudisha home/away teams."
+      "API-Football haikurudisha home/away teams."
     );
   }
 
   const [
     homeHistory,
     awayHistory
-  ] =
-    await Promise.all([
-      getTeamHistory(
-        home.id
-      ),
-
-      getTeamHistory(
-        away.id
-      )
-    ]);
+  ] = await Promise.all([
+    getTeamHistory(home.id),
+    getTeamHistory(away.id)
+  ]);
 
   const homeForm =
     teamForm(
@@ -947,28 +759,18 @@ async function analyze(
 
   const result =
     predict(
-      {
-        ...fixture,
-        name:
-          fixture.name ||
-          `${home.name} vs ${away.name}`
-      },
+      fixture,
       homeForm,
       awayForm
     );
 
-  db.predictions.push(
-    result
-  );
+  db.predictions.push(result);
 
   if (
-    db.predictions.length >
-    500
+    db.predictions.length > 500
   ) {
     db.predictions =
-      db.predictions.slice(
-        -500
-      );
+      db.predictions.slice(-500);
   }
 
   saveDB(db);
@@ -977,7 +779,7 @@ async function analyze(
 }
 
 /* ================================
-   JSON RESPONSE
+   JSON
 ================================ */
 
 function sendJSON(
@@ -990,6 +792,7 @@ function sendJSON(
     {
       "Content-Type":
         "application/json; charset=utf-8",
+
       "Cache-Control":
         "no-store"
     }
@@ -1001,7 +804,7 @@ function sendJSON(
 }
 
 /* ================================
-   API
+   API ROUTES
 ================================ */
 
 async function api(
@@ -1009,6 +812,8 @@ async function api(
   res,
   url
 ) {
+  /* HEALTH */
+
   if (
     url.pathname ===
     "/api/health"
@@ -1019,31 +824,31 @@ async function api(
       {
         ok: true,
         provider:
-          "Sportmonks",
+          "API-Football",
+
         tokenConfigured:
-          Boolean(TOKEN),
+          Boolean(API_KEY),
+
         service:
           "Fanuel Football Prediction"
       }
     );
   }
 
+  /* UPCOMING */
+
   if (
     url.pathname ===
     "/api/upcoming"
   ) {
     const date =
-      url.searchParams.get(
-        "date"
-      ) ||
+      url.searchParams.get("date") ||
       new Date()
         .toISOString()
         .slice(0, 10);
 
     if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(
-        date
-      )
+      !/^\d{4}-\d{2}-\d{2}$/.test(date)
     ) {
       return sendJSON(
         res,
@@ -1058,9 +863,7 @@ async function api(
 
     try {
       const result =
-        await getFixtures(
-          date
-        );
+        await getFixtures(date);
 
       return sendJSON(
         res,
@@ -1085,14 +888,13 @@ async function api(
     }
   }
 
+  /* ANALYZE */
+
   if (
     url.pathname ===
     "/api/analyze-fixture"
   ) {
-    if (
-      req.method !==
-      "POST"
-    ) {
+    if (req.method !== "POST") {
       return sendJSON(
         res,
         405,
@@ -1122,9 +924,7 @@ async function api(
               body || "{}"
             );
 
-          if (
-            !data.fixtureId
-          ) {
+          if (!data.fixtureId) {
             return sendJSON(
               res,
               400,
@@ -1172,6 +972,8 @@ async function api(
     return;
   }
 
+  /* PREDICTIONS */
+
   if (
     url.pathname ===
     "/api/predictions"
@@ -1187,6 +989,8 @@ async function api(
     );
   }
 
+  /* PERFORMANCE */
+
   if (
     url.pathname ===
     "/api/performance"
@@ -1199,8 +1003,7 @@ async function api(
 
     const correct =
       results.filter(
-        x =>
-          x.correct === true
+        x => x.correct === true
       ).length;
 
     return sendJSON(
@@ -1208,6 +1011,7 @@ async function api(
       200,
       {
         ok: true,
+
         totalPredictions:
           db.predictions.length,
 
@@ -1221,8 +1025,7 @@ async function api(
                 (
                   correct /
                   settled
-                ) *
-                1000
+                ) * 1000
               ) / 10
             : 0
       }
@@ -1256,11 +1059,8 @@ function serveFile(
       ).pathname
     );
 
-  if (
-    file === "/"
-  ) {
-    file =
-      "/index.html";
+  if (file === "/") {
+    file = "/index.html";
   }
 
   const filePath =
@@ -1395,9 +1195,8 @@ server.listen(
     );
 
     console.log(
-      "Sportmonks token configured:",
-      Boolean(TOKEN)
+      "API-Football key configured:",
+      Boolean(API_KEY)
     );
   }
 );
-```
