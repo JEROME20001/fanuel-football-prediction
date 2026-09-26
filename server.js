@@ -2,42 +2,34 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
 
 const PORT = process.env.PORT || 3000;
-const ROOT = __dirname;
-const PUB = path.join(ROOT, "public");
-const DATA_DIR = path.join(ROOT, "data");
+const PUBLIC_DIR = path.join(__dirname, "public");
+const DATA_DIR = path.join(__dirname, "data");
+const DB_FILE = path.join(DATA_DIR, "db.json");
+
+const TOKEN = process.env.SPORTMONKS_API_TOKEN || "";
+const API_BASE = "https://api.sportmonks.com/v3/football";
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
-
-const DB_FILE = path.join(DATA_DIR, "db.json");
-
-const SPORTMONKS_TOKEN = process.env.SPORTMONKS_API_TOKEN || "";
-const SPORTMONKS_BASE = "https://api.sportmonks.com/v3/football";
-
-const CACHE_TTL = 5 * 60 * 1000;
-const TEAM_CACHE_TTL = 30 * 60 * 1000;
-
-const cache = new Map();
 
 function loadDB() {
   try {
     if (!fs.existsSync(DB_FILE)) {
       return {
         predictions: [],
-        history: [],
         results: []
       };
     }
 
-    return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+    return JSON.parse(
+      fs.readFileSync(DB_FILE, "utf8")
+    );
   } catch {
     return {
       predictions: [],
-      history: [],
       results: []
     };
   }
@@ -45,45 +37,25 @@ function loadDB() {
 
 function saveDB(db) {
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+    fs.writeFileSync(
+      DB_FILE,
+      JSON.stringify(db, null, 2)
+    );
   } catch (err) {
-    console.error("DB save error:", err.message);
+    console.log("DB save error:", err.message);
   }
 }
 
 const db = loadDB();
 
-function json(res, status, data) {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store"
-  });
+const cache = new Map();
 
-  res.end(JSON.stringify(data));
-}
-
-function sendError(res, status, message, extra = {}) {
-  json(res, status, {
-    ok: false,
-    error: message,
-    ...extra
-  });
-}
-
-function getQuery(url) {
-  return new URL(url, `http://localhost:${PORT}`).searchParams;
-}
-
-function validDate(date) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(date);
-}
-
-function getCached(key) {
+function cacheGet(key) {
   const item = cache.get(key);
 
   if (!item) return null;
 
-  if (Date.now() - item.time > item.ttl) {
+  if (Date.now() > item.expires) {
     cache.delete(key);
     return null;
   }
@@ -91,32 +63,39 @@ function getCached(key) {
   return item.value;
 }
 
-function setCached(key, value, ttl = CACHE_TTL) {
+function cacheSet(key, value, minutes) {
   cache.set(key, {
-    time: Date.now(),
-    ttl,
-    value
+    value,
+    expires:
+      Date.now() +
+      minutes * 60 * 1000
   });
 }
 
-async function sportmonksRequest(endpoint, options = {}) {
-  if (!SPORTMONKS_TOKEN) {
+async function apiRequest(endpoint) {
+  if (!TOKEN) {
     throw new Error(
-      "SPORTMONKS_API_TOKEN haijawekwa kwenye Render Environment Variables."
+      "SPORTMONKS_API_TOKEN haijawekwa kwenye Render."
     );
   }
 
-  const separator = endpoint.includes("?") ? "&" : "?";
+  const separator =
+    endpoint.includes("?")
+      ? "&"
+      : "?";
 
   const url =
-    `${SPORTMONKS_BASE}${endpoint}` +
-    `${separator}api_token=${encodeURIComponent(SPORTMONKS_TOKEN)}`;
+    API_BASE +
+    endpoint +
+    separator +
+    "api_token=" +
+    encodeURIComponent(TOKEN);
 
   const response = await fetch(url, {
+    method: "GET",
     headers: {
       Accept: "application/json"
-    },
-    ...options
+    }
   });
 
   const text = await response.text();
@@ -127,408 +106,464 @@ async function sportmonksRequest(endpoint, options = {}) {
     data = JSON.parse(text);
   } catch {
     throw new Error(
-      `Sportmonks ilirudisha response isiyokuwa JSON. HTTP ${response.status}`
+      "Sportmonks ilirudisha response isiyo JSON. HTTP " +
+      response.status
     );
   }
 
   if (!response.ok) {
-    const message =
-      data?.message ||
-      data?.error?.message ||
-      `Sportmonks HTTP ${response.status}`;
-
-    const error = new Error(message);
-    error.status = response.status;
-    error.provider = data;
-
-    throw error;
+    throw new Error(
+      data.message ||
+      "Sportmonks HTTP " +
+      response.status
+    );
   }
 
   return data;
 }
 
-/* -------------------------------------------------------
-   NORMALIZE SPORTMONKS FIXTURE
-------------------------------------------------------- */
+/* ================================
+   GET FIXTURES BY DATE
+================================ */
 
-function normalizeFixture(fixture) {
-  const participants = Array.isArray(fixture.participants)
-    ? fixture.participants
-    : [];
+async function getFixtures(date) {
+  const cacheKey = "date:" + date;
 
-  let home = null;
-  let away = null;
-
-  for (const team of participants) {
-    const meta = team.meta || {};
-
-    if (
-      meta.location === "home" ||
-      meta.location === "Home" ||
-      team.location === "home"
-    ) {
-      home = team;
-    }
-
-    if (
-      meta.location === "away" ||
-      meta.location === "Away" ||
-      team.location === "away"
-    ) {
-      away = team;
-    }
-  }
-
-  if (!home && participants[0]) home = participants[0];
-  if (!away && participants[1]) away = participants[1];
-
-  const league =
-    fixture.league?.name ||
-    fixture.league?.short_code ||
-    "Unknown League";
-
-  const homeName =
-    home?.name ||
-    home?.short_code ||
-    "Home Team";
-
-  const awayName =
-    away?.name ||
-    away?.short_code ||
-    "Away Team";
-
-  return {
-    id: fixture.id,
-    fixtureId: fixture.id,
-
-    name:
-      fixture.name ||
-      `${homeName} vs ${awayName}`,
-
-    starting_at: fixture.starting_at,
-
-    homeTeam: {
-      id: home?.id || null,
-      name: homeName,
-      logo: home?.image_path || null
-    },
-
-    awayTeam: {
-      id: away?.id || null,
-      name: awayName,
-      logo: away?.image_path || null
-    },
-
-    league: {
-      id: fixture.league?.id || null,
-      name: league
-    },
-
-    season: {
-      id: fixture.season?.id || null,
-      name: fixture.season?.name || null
-    },
-
-    state: fixture.state || null,
-    scores: fixture.scores || [],
-    result_info: fixture.result_info || null,
-
-    raw: fixture
-  };
-}
-
-/* -------------------------------------------------------
-   GET ALL FIXTURES FOR DATE
-------------------------------------------------------- */
-
-async function getFixturesByDate(date) {
-  const cacheKey = `fixtures:${date}`;
-
-  const cached = getCached(cacheKey);
+  const cached = cacheGet(cacheKey);
 
   if (cached) {
     return cached;
   }
 
   let page = 1;
-  const all = [];
+  let all = [];
 
   while (true) {
     const endpoint =
-      `/fixtures/date/${encodeURIComponent(date)}` +
-      `?per_page=50&page=${page}` +
-      `&include=participants;league;season;scores`;
+      "/fixtures/date/" +
+      date +
+      "?per_page=50&page=" +
+      page +
+      "&include=participants;league;season";
 
-    const response = await sportmonksRequest(endpoint);
+    const response =
+      await apiRequest(endpoint);
 
-    const fixtures = Array.isArray(response.data)
-      ? response.data
-      : [];
+    const fixtures =
+      Array.isArray(response.data)
+        ? response.data
+        : [];
 
-    all.push(...fixtures);
+    all = all.concat(fixtures);
 
-    const hasMore =
-      response.pagination?.has_more === true;
-
-    if (!hasMore || fixtures.length === 0) {
+    if (
+      !response.pagination ||
+      response.pagination.has_more !== true ||
+      fixtures.length === 0
+    ) {
       break;
     }
 
     page++;
 
-    // Safety limit
     if (page > 20) {
       break;
     }
   }
 
-  const normalized = all
-    .map(normalizeFixture)
-    .filter(match =>
-      match.homeTeam?.name &&
-      match.awayTeam?.name
-    );
+  const matches = all.map(formatFixture);
 
   const result = {
+    ok: true,
+    provider: "Sportmonks",
     date,
-    count: normalized.length,
-    matches: normalized,
-    pagesFetched: page
+    count: matches.length,
+    matches
   };
 
-  setCached(cacheKey, result);
+  cacheSet(
+    cacheKey,
+    result,
+    5
+  );
 
   return result;
 }
 
-/* -------------------------------------------------------
-   GET FIXTURE BY ID
-------------------------------------------------------- */
+/* ================================
+   FORMAT FIXTURE
+================================ */
 
-async function getFixtureById(id) {
-  const cacheKey = `fixture:${id}`;
+function formatFixture(fixture) {
+  const participants =
+    Array.isArray(fixture.participants)
+      ? fixture.participants
+      : [];
 
-  const cached = getCached(cacheKey);
+  let home = null;
+  let away = null;
 
-  if (cached) {
-    return cached;
+  participants.forEach(team => {
+    const location =
+      team.meta &&
+      team.meta.location;
+
+    if (location === "home") {
+      home = team;
+    }
+
+    if (location === "away") {
+      away = team;
+    }
+  });
+
+  if (!home && participants[0]) {
+    home = participants[0];
   }
 
-  const endpoint =
-    `/fixtures/${encodeURIComponent(id)}` +
-    `?include=participants;league;season;scores`;
-
-  const response = await sportmonksRequest(endpoint);
-
-  const fixture = response.data;
-
-  if (!fixture) {
-    throw new Error("Fixture haijapatikana.");
+  if (!away && participants[1]) {
+    away = participants[1];
   }
 
-  const normalized = normalizeFixture(fixture);
+  return {
+    id: fixture.id,
 
-  setCached(cacheKey, normalized, TEAM_CACHE_TTL);
+    name:
+      fixture.name ||
+      "Unknown Match",
 
-  return normalized;
+    starting_at:
+      fixture.starting_at,
+
+    homeTeam: {
+      id: home ? home.id : null,
+      name:
+        home
+          ? home.name
+          : "Home Team",
+
+      logo:
+        home
+          ? home.image_path || null
+          : null
+    },
+
+    awayTeam: {
+      id: away ? away.id : null,
+      name:
+        away
+          ? away.name
+          : "Away Team",
+
+      logo:
+        away
+          ? away.image_path || null
+          : null
+    },
+
+    league: {
+      id:
+        fixture.league
+          ? fixture.league.id
+          : fixture.league_id,
+
+      name:
+        fixture.league
+          ? fixture.league.name
+          : "Unknown League"
+    },
+
+    season:
+      fixture.season || null,
+
+    state:
+      fixture.state || null,
+
+    result_info:
+      fixture.result_info || null,
+
+    starting_at_timestamp:
+      fixture.starting_at_timestamp || null
+  };
 }
 
-/* -------------------------------------------------------
-   TEAM HISTORICAL FIXTURES
-------------------------------------------------------- */
+/* ================================
+   GET FIXTURE BY ID
+================================ */
 
-async function getTeamHistory(teamId, days = 90) {
-  if (!teamId) return [];
+async function getFixture(id) {
+  const cacheKey =
+    "fixture:" + id;
 
-  const cacheKey = `team-history:${teamId}:${days}`;
-
-  const cached = getCached(cacheKey);
+  const cached =
+    cacheGet(cacheKey);
 
   if (cached) {
     return cached;
   }
 
-  const end = new Date();
-
-  const start = new Date(
-    end.getTime() - days * 24 * 60 * 60 * 1000
-  );
-
-  const startDate =
-    start.toISOString().slice(0, 10);
-
-  const endDate =
-    end.toISOString().slice(0, 10);
-
-  const endpoint =
-    `/fixtures/between/${startDate}/${endDate}/${teamId}` +
-    `?per_page=50&page=1` +
-    `&include=participants;scores;league`;
-
-  const response = await sportmonksRequest(endpoint);
-
-  const fixtures = Array.isArray(response.data)
-    ? response.data
-    : [];
-
-  const history = fixtures
-    .map(normalizeFixture)
-    .sort(
-      (a, b) =>
-        new Date(b.starting_at) -
-        new Date(a.starting_at)
+  const response =
+    await apiRequest(
+      "/fixtures/" +
+      encodeURIComponent(id) +
+      "?include=participants;league;season;scores"
     );
 
-  setCached(cacheKey, history, TEAM_CACHE_TTL);
+  if (!response.data) {
+    throw new Error(
+      "Fixture haijapatikana."
+    );
+  }
 
-  return history;
+  cacheSet(
+    cacheKey,
+    response.data,
+    30
+  );
+
+  return response.data;
 }
 
-/* -------------------------------------------------------
-   SCORE EXTRACTION
-------------------------------------------------------- */
+/* ================================
+   TEAM HISTORY
+================================ */
 
-function getFinalScore(match) {
-  if (!Array.isArray(match.scores)) {
+async function getTeamHistory(teamId) {
+  if (!teamId) {
+    return [];
+  }
+
+  const end =
+    new Date();
+
+  const start =
+    new Date(
+      end.getTime() -
+      120 *
+      24 *
+      60 *
+      60 *
+      1000
+    );
+
+  const startDate =
+    start
+      .toISOString()
+      .slice(0, 10);
+
+  const endDate =
+    end
+      .toISOString()
+      .slice(0, 10);
+
+  const cacheKey =
+    "history:" +
+    teamId +
+    ":" +
+    startDate +
+    ":" +
+    endDate;
+
+  const cached =
+    cacheGet(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const endpoint =
+    "/fixtures/between/" +
+    startDate +
+    "/" +
+    endDate +
+    "/" +
+    teamId +
+    "?per_page=50&page=1" +
+    "&include=participants;scores;league";
+
+  const response =
+    await apiRequest(endpoint);
+
+  const fixtures =
+    Array.isArray(response.data)
+      ? response.data
+      : [];
+
+  cacheSet(
+    cacheKey,
+    fixtures,
+    30
+  );
+
+  return fixtures;
+}
+
+/* ================================
+   SCORE
+================================ */
+
+function getScore(
+  fixture,
+  homeId,
+  awayId
+) {
+  if (
+    !Array.isArray(
+      fixture.scores
+    )
+  ) {
     return null;
   }
 
   let home = null;
   let away = null;
 
-  for (const score of match.scores) {
-    const description =
-      String(score.description || "").toLowerCase();
-
-    const type =
-      String(score.type_id || "").toLowerCase();
-
+  fixture.scores.forEach(score => {
     const participant =
-      String(
-        score.participant_id ||
-        score.participant ||
-        ""
-      );
+      score.participant_id;
 
     const goals =
-      score.score?.goals ??
-      score.goals ??
-      null;
-
-    if (goals === null) continue;
+      score.score &&
+      score.score.goals;
 
     if (
-      description.includes("current") ||
-      description.includes("ft") ||
-      description.includes("full") ||
-      type === "2"
+      goals === undefined ||
+      goals === null
     ) {
-      if (
-        participant ===
-        String(match.homeTeam.id)
-      ) {
-        home = Number(goals);
-      }
-
-      if (
-        participant ===
-        String(match.awayTeam.id)
-      ) {
-        away = Number(goals);
-      }
+      return;
     }
-  }
 
-  // Fallback: use score entries by participant
-  if (home === null || away === null) {
-    for (const score of match.scores) {
-      const goals =
-        score.score?.goals ??
-        score.goals;
-
-      if (goals === undefined) continue;
-
-      if (
-        String(score.participant_id) ===
-        String(match.homeTeam.id)
-      ) {
-        home = Number(goals);
-      }
-
-      if (
-        String(score.participant_id) ===
-        String(match.awayTeam.id)
-      ) {
-        away = Number(goals);
-      }
+    if (
+      String(participant) ===
+      String(homeId)
+    ) {
+      home = Number(goals);
     }
-  }
+
+    if (
+      String(participant) ===
+      String(awayId)
+    ) {
+      away = Number(goals);
+    }
+  });
 
   if (
     Number.isFinite(home) &&
     Number.isFinite(away)
   ) {
-    return { home, away };
+    return {
+      home,
+      away
+    };
   }
 
   return null;
 }
 
-/* -------------------------------------------------------
-   FORM CALCULATION
-------------------------------------------------------- */
+/* ================================
+   TEAM FORM
+================================ */
 
-function calculateTeamForm(teamId, fixtures) {
-  const finished = [];
+function teamForm(
+  teamId,
+  fixtures
+) {
+  const games = [];
 
-  for (const match of fixtures) {
-    const score = getFinalScore(match);
+  fixtures
+    .sort(
+      (a, b) =>
+        new Date(b.starting_at) -
+        new Date(a.starting_at)
+    )
+    .forEach(fixture => {
+      const participants =
+        fixture.participants || [];
 
-    if (!score) continue;
+      let home = null;
+      let away = null;
 
-    const isHome =
-      String(match.homeTeam.id) ===
-      String(teamId);
+      participants.forEach(team => {
+        const loc =
+          team.meta &&
+          team.meta.location;
 
-    const isAway =
-      String(match.awayTeam.id) ===
-      String(teamId);
+        if (loc === "home") {
+          home = team;
+        }
 
-    if (!isHome && !isAway) continue;
+        if (loc === "away") {
+          away = team;
+        }
+      });
 
-    const gf = isHome
-      ? score.home
-      : score.away;
+      if (!home || !away) {
+        return;
+      }
 
-    const ga = isHome
-      ? score.away
-      : score.home;
+      const score =
+        getScore(
+          fixture,
+          home.id,
+          away.id
+        );
 
-    let result = "D";
+      if (!score) {
+        return;
+      }
 
-    if (gf > ga) result = "W";
-    if (gf < ga) result = "L";
+      const isHome =
+        String(home.id) ===
+        String(teamId);
 
-    finished.push({
-      result,
-      gf,
-      ga
+      const isAway =
+        String(away.id) ===
+        String(teamId);
+
+      if (!isHome && !isAway) {
+        return;
+      }
+
+      const gf =
+        isHome
+          ? score.home
+          : score.away;
+
+      const ga =
+        isHome
+          ? score.away
+          : score.home;
+
+      let result = "D";
+
+      if (gf > ga) {
+        result = "W";
+      }
+
+      if (gf < ga) {
+        result = "L";
+      }
+
+      games.push({
+        result,
+        gf,
+        ga
+      });
     });
-  }
 
-  const lastFive = finished.slice(0, 5);
+  const last =
+    games.slice(0, 5);
 
-  if (!lastFive.length) {
+  if (!last.length) {
     return {
       matches: 0,
       wins: 0,
       draws: 0,
       losses: 0,
-      goalsFor: 0,
-      goalsAgainst: 0,
+      goalsFor: 1.35,
+      goalsAgainst: 1.10,
       points: 0,
-      averageGoalsFor: 1.35,
-      averageGoalsAgainst: 1.05,
       form: "N/A"
     };
   }
@@ -536,57 +571,73 @@ function calculateTeamForm(teamId, fixtures) {
   let wins = 0;
   let draws = 0;
   let losses = 0;
-  let goalsFor = 0;
-  let goalsAgainst = 0;
+  let gf = 0;
+  let ga = 0;
 
-  for (const game of lastFive) {
-    if (game.result === "W") wins++;
-    if (game.result === "D") draws++;
-    if (game.result === "L") losses++;
+  last.forEach(game => {
+    gf += game.gf;
+    ga += game.ga;
 
-    goalsFor += game.gf;
-    goalsAgainst += game.ga;
-  }
+    if (game.result === "W") {
+      wins++;
+    }
 
-  const points =
-    wins * 3 +
-    draws;
+    if (game.result === "D") {
+      draws++;
+    }
+
+    if (game.result === "L") {
+      losses++;
+    }
+  });
 
   return {
-    matches: lastFive.length,
+    matches: last.length,
+
     wins,
+
     draws,
+
     losses,
-    goalsFor,
-    goalsAgainst,
-    points,
-    averageGoalsFor:
-      goalsFor / lastFive.length,
-    averageGoalsAgainst:
-      goalsAgainst / lastFive.length,
-    form: lastFive
-      .map(x => x.result)
-      .join("")
+
+    goalsFor:
+      gf / last.length,
+
+    goalsAgainst:
+      ga / last.length,
+
+    points:
+      wins * 3 + draws,
+
+    form:
+      last
+        .map(x => x.result)
+        .join("")
   };
 }
 
-/* -------------------------------------------------------
+/* ================================
    POISSON
-------------------------------------------------------- */
+================================ */
 
 function factorial(n) {
-  if (n <= 1) return 1;
-
   let result = 1;
 
-  for (let i = 2; i <= n; i++) {
+  for (
+    let i = 2;
+    i <= n;
+    i++
+  ) {
     result *= i;
   }
 
   return result;
 }
 
-function poisson(lambda, goals) {
+function poisson(
+  lambda,
+  goals
+) {
   return (
     Math.exp(-lambda) *
     Math.pow(lambda, goals) /
@@ -594,240 +645,759 @@ function poisson(lambda, goals) {
   );
 }
 
-function poissonMatrix(homeLambda, awayLambda) {
-  let homeWin = 0;
+function probabilities(
+  homeLambda,
+  awayLambda
+) {
+  let home = 0;
   let draw = 0;
-  let awayWin = 0;
+  let away = 0;
 
   let over25 = 0;
   let btts = 0;
 
-  for (let h = 0; h <= 8; h++) {
-    for (let a = 0; a <= 8; a++) {
-      const probability =
-        poisson(homeLambda, h) *
-        poisson(awayLambda, a);
+  for (
+    let h = 0;
+    h <= 8;
+    h++
+  ) {
+    for (
+      let a = 0;
+      a <= 8;
+      a++
+    ) {
+      const p =
+        poisson(
+          homeLambda,
+          h
+        ) *
+        poisson(
+          awayLambda,
+          a
+        );
 
       if (h > a) {
-        homeWin += probability;
+        home += p;
       } else if (h === a) {
-        draw += probability;
+        draw += p;
       } else {
-        awayWin += probability;
+        away += p;
       }
 
-      if (h + a >= 3) {
-        over25 += probability;
+      if (
+        h + a >= 3
+      ) {
+        over25 += p;
       }
 
-      if (h >= 1 && a >= 1) {
-        btts += probability;
+      if (
+        h >= 1 &&
+        a >= 1
+      ) {
+        btts += p;
       }
     }
   }
 
   const total =
-    homeWin +
+    home +
     draw +
-    awayWin;
+    away;
 
   return {
-    homeWin: homeWin / total,
-    draw: draw / total,
-    awayWin: awayWin / total,
+    home:
+      home / total,
+
+    draw:
+      draw / total,
+
+    away:
+      away / total,
+
     over25,
+
     btts
   };
 }
 
-/* -------------------------------------------------------
-   AI-ASSISTED PREDICTION
-------------------------------------------------------- */
+/* ================================
+   PREDICTION
+================================ */
 
-function createPrediction(match, homeForm, awayForm) {
-  /*
-    Hakuna bookmaker odds zinatumika hapa.
-    Model inategemea team form + goals + home advantage.
-  */
-
-  const homeAttack =
-    homeForm.averageGoalsFor;
-
-  const homeDefense =
-    homeForm.averageGoalsAgainst;
-
-  const awayAttack =
-    awayForm.averageGoalsFor;
-
-  const awayDefense =
-    awayForm.averageGoalsAgainst;
-
+function predict(
+  fixture,
+  homeForm,
+  awayForm
+) {
   let homeLambda =
-    (homeAttack + awayDefense) / 2;
+    (
+      homeForm.goalsFor +
+      awayForm.goalsAgainst
+    ) / 2;
 
   let awayLambda =
-    (awayAttack + homeDefense) / 2;
+    (
+      awayForm.goalsFor +
+      homeForm.goalsAgainst
+    ) / 2;
 
   // Home advantage
   homeLambda *= 1.08;
 
-  // Prevent unrealistic values
   homeLambda =
     Math.max(
       0.25,
-      Math.min(homeLambda, 3.8)
+      Math.min(
+        homeLambda,
+        4
+      )
     );
 
   awayLambda =
     Math.max(
       0.20,
-      Math.min(awayLambda, 3.5)
+      Math.min(
+        awayLambda,
+        4
+      )
     );
 
-  const matrix =
-    poissonMatrix(
+  const p =
+    probabilities(
       homeLambda,
       awayLambda
     );
 
-  const probabilities = {
-    home:
-      Math.round(matrix.homeWin * 1000) / 10,
+  const homePct =
+    Math.round(
+      p.home * 1000
+    ) / 10;
 
-    draw:
-      Math.round(matrix.draw * 1000) / 10,
+  const drawPct =
+    Math.round(
+      p.draw * 1000
+    ) / 10;
 
-    away:
-      Math.round(matrix.awayWin * 1000) / 10
-  };
+  const awayPct =
+    Math.round(
+      p.away * 1000
+    ) / 10;
 
   let pick = "Draw";
-  let confidence = probabilities.draw;
-
-  if (probabilities.home > confidence) {
-    pick = "Home Win";
-    confidence = probabilities.home;
-  }
-
-  if (probabilities.away > confidence) {
-    pick = "Away Win";
-    confidence = probabilities.away;
-  }
-
-  let doubleChance = "1X";
+  let confidence =
+    drawPct;
 
   if (
-    probabilities.home >= probabilities.away &&
-    probabilities.home >= probabilities.draw
+    homePct >
+    confidence
   ) {
-    doubleChance = "1X";
-  } else if (
-    probabilities.away >= probabilities.home &&
-    probabilities.away >= probabilities.draw
-  ) {
-    doubleChance = "X2";
-  } else {
-    doubleChance = "1X";
+    pick = "Home Win";
+    confidence =
+      homePct;
   }
 
-  const confidenceLabel =
-    confidence >= 70
-      ? "High"
-      : confidence >= 55
-      ? "Medium"
-      : "Low";
+  if (
+    awayPct >
+    confidence
+  ) {
+    pick = "Away Win";
+    confidence =
+      awayPct;
+  }
 
   return {
-    fixtureId: match.fixtureId,
+    fixtureId:
+      fixture.id,
 
-    match: match.name,
+    match:
+      fixture.name,
 
-    homeTeam: match.homeTeam.name,
-    awayTeam: match.awayTeam.name,
+    homeTeam:
+      fixture.participants
+        ? fixture.participants[0]?.name
+        : "Home",
 
-    league: match.league.name,
+    awayTeam:
+      fixture.participants
+        ? fixture.participants[1]?.name
+        : "Away",
 
     pick,
 
-    confidence:
-      Math.round(confidence * 10) / 10,
+    confidence,
 
-    confidenceLabel,
+    probabilities: {
+      home: homePct,
+      draw: drawPct,
+      away: awayPct
+    },
 
-    probabilities,
-
-    doubleChance,
+    doubleChance:
+      homePct >= awayPct
+        ? "1X"
+        : "X2",
 
     over25:
-      Math.round(matrix.over25 * 1000) / 10,
+      Math.round(
+        p.over25 * 1000
+      ) / 10,
 
     btts:
-      Math.round(matrix.btts * 1000) / 10,
+      Math.round(
+        p.btts * 1000
+      ) / 10,
 
     expectedGoals: {
       home:
-        Math.round(homeLambda * 100) / 100,
+        Math.round(
+          homeLambda * 100
+        ) / 100,
 
       away:
-        Math.round(awayLambda * 100) / 100
+        Math.round(
+          awayLambda * 100
+        ) / 100
     },
 
     form: {
-      home: homeForm,
-      away: awayForm
+      home:
+        homeForm,
+
+      away:
+        awayForm
     },
 
-    model: "Poisson + Team Form",
+    model:
+      "Fanuel Statistical AI",
 
-    usesOdds: false,
+    usesOdds:
+      false,
 
     createdAt:
       new Date().toISOString()
   };
 }
 
-/* -------------------------------------------------------
-   ANALYZE MATCH
-------------------------------------------------------- */
+/* ================================
+   ANALYZE
+================================ */
 
-async function analyzeFixture(fixtureId) {
-  const match =
-    await getFixtureById(fixtureId);
+async function analyze(
+  fixtureId
+) {
+  const fixture =
+    await getFixture(
+      fixtureId
+    );
 
-  const homeId =
-    match.homeTeam.id;
+  const participants =
+    fixture.participants || [];
 
-  const awayId =
-    match.awayTeam.id;
+  let home = null;
+  let away = null;
+
+  participants.forEach(team => {
+    const location =
+      team.meta &&
+      team.meta.location;
+
+    if (location === "home") {
+      home = team;
+    }
+
+    if (location === "away") {
+      away = team;
+    }
+  });
+
+  if (
+    !home ||
+    !away
+  ) {
+    throw new Error(
+      "Sportmonks haikurudisha home/away teams."
+    );
+  }
 
   const [
     homeHistory,
     awayHistory
-  ] = await Promise.all([
-    getTeamHistory(homeId, 120),
-    getTeamHistory(awayId, 120)
-  ]);
+  ] =
+    await Promise.all([
+      getTeamHistory(
+        home.id
+      ),
+
+      getTeamHistory(
+        away.id
+      )
+    ]);
 
   const homeForm =
-    calculateTeamForm(
-      homeId,
+    teamForm(
+      home.id,
       homeHistory
     );
 
   const awayForm =
-    calculateTeamForm(
-      awayId,
+    teamForm(
+      away.id,
       awayHistory
     );
 
-  const prediction =
-    createPrediction(
-      match,
+  const result =
+    predict(
+      {
+        ...fixture,
+        name:
+          fixture.name ||
+          `${home.name} vs ${away.name}`
+      },
       homeForm,
       awayForm
     );
 
-  db.predictions.push(prediction);
+  db.predictions.push(
+    result
+  );
 
-  if (db.pre
+  if (
+    db.predictions.length >
+    500
+  ) {
+    db.predictions =
+      db.predictions.slice(
+        -500
+      );
+  }
+
+  saveDB(db);
+
+  return result;
+}
+
+/* ================================
+   JSON RESPONSE
+================================ */
+
+function sendJSON(
+  res,
+  status,
+  data
+) {
+  res.writeHead(
+    status,
+    {
+      "Content-Type":
+        "application/json; charset=utf-8",
+      "Cache-Control":
+        "no-store"
+    }
+  );
+
+  res.end(
+    JSON.stringify(data)
+  );
+}
+
+/* ================================
+   API
+================================ */
+
+async function api(
+  req,
+  res,
+  url
+) {
+  if (
+    url.pathname ===
+    "/api/health"
+  ) {
+    return sendJSON(
+      res,
+      200,
+      {
+        ok: true,
+        provider:
+          "Sportmonks",
+        tokenConfigured:
+          Boolean(TOKEN),
+        service:
+          "Fanuel Football Prediction"
+      }
+    );
+  }
+
+  if (
+    url.pathname ===
+    "/api/upcoming"
+  ) {
+    const date =
+      url.searchParams.get(
+        "date"
+      ) ||
+      new Date()
+        .toISOString()
+        .slice(0, 10);
+
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(
+        date
+      )
+    ) {
+      return sendJSON(
+        res,
+        400,
+        {
+          ok: false,
+          error:
+            "Tumia date ya YYYY-MM-DD"
+        }
+      );
+    }
+
+    try {
+      const result =
+        await getFixtures(
+          date
+        );
+
+      return sendJSON(
+        res,
+        200,
+        result
+      );
+    } catch (err) {
+      console.log(
+        "Fixture error:",
+        err.message
+      );
+
+      return sendJSON(
+        res,
+        500,
+        {
+          ok: false,
+          error:
+            err.message
+        }
+      );
+    }
+  }
+
+  if (
+    url.pathname ===
+    "/api/analyze-fixture"
+  ) {
+    if (
+      req.method !==
+      "POST"
+    ) {
+      return sendJSON(
+        res,
+        405,
+        {
+          ok: false,
+          error:
+            "POST required"
+        }
+      );
+    }
+
+    let body = "";
+
+    req.on(
+      "data",
+      chunk => {
+        body += chunk;
+      }
+    );
+
+    req.on(
+      "end",
+      async () => {
+        try {
+          const data =
+            JSON.parse(
+              body || "{}"
+            );
+
+          if (
+            !data.fixtureId
+          ) {
+            return sendJSON(
+              res,
+              400,
+              {
+                ok: false,
+                error:
+                  "fixtureId required"
+              }
+            );
+          }
+
+          const result =
+            await analyze(
+              data.fixtureId
+            );
+
+          return sendJSON(
+            res,
+            200,
+            {
+              ok: true,
+              prediction:
+                result
+            }
+          );
+        } catch (err) {
+          console.log(
+            "Analysis error:",
+            err.message
+          );
+
+          return sendJSON(
+            res,
+            500,
+            {
+              ok: false,
+              error:
+                err.message
+            }
+          );
+        }
+      }
+    );
+
+    return;
+  }
+
+  if (
+    url.pathname ===
+    "/api/predictions"
+  ) {
+    return sendJSON(
+      res,
+      200,
+      {
+        ok: true,
+        predictions:
+          db.predictions
+      }
+    );
+  }
+
+  if (
+    url.pathname ===
+    "/api/performance"
+  ) {
+    const results =
+      db.results || [];
+
+    const settled =
+      results.length;
+
+    const correct =
+      results.filter(
+        x =>
+          x.correct === true
+      ).length;
+
+    return sendJSON(
+      res,
+      200,
+      {
+        ok: true,
+        totalPredictions:
+          db.predictions.length,
+
+        settled,
+
+        correct,
+
+        accuracy:
+          settled
+            ? Math.round(
+                (
+                  correct /
+                  settled
+                ) *
+                1000
+              ) / 10
+            : 0
+      }
+    );
+  }
+
+  return sendJSON(
+    res,
+    404,
+    {
+      ok: false,
+      error:
+        "API route not found"
+    }
+  );
+}
+
+/* ================================
+   STATIC FILES
+================================ */
+
+function serveFile(
+  req,
+  res
+) {
+  let file =
+    decodeURIComponent(
+      new URL(
+        req.url,
+        "http://localhost"
+      ).pathname
+    );
+
+  if (
+    file === "/"
+  ) {
+    file =
+      "/index.html";
+  }
+
+  const filePath =
+    path.join(
+      PUBLIC_DIR,
+      file
+    );
+
+  if (
+    !filePath.startsWith(
+      PUBLIC_DIR
+    )
+  ) {
+    res.writeHead(403);
+    return res.end(
+      "Forbidden"
+    );
+  }
+
+  fs.readFile(
+    filePath,
+    (err, data) => {
+      if (err) {
+        res.writeHead(404);
+        return res.end(
+          "Not found"
+        );
+      }
+
+      const ext =
+        path.extname(
+          filePath
+        ).toLowerCase();
+
+      const types = {
+        ".html":
+          "text/html; charset=utf-8",
+
+        ".js":
+          "application/javascript; charset=utf-8",
+
+        ".css":
+          "text/css; charset=utf-8",
+
+        ".json":
+          "application/json; charset=utf-8",
+
+        ".png":
+          "image/png",
+
+        ".jpg":
+          "image/jpeg",
+
+        ".jpeg":
+          "image/jpeg",
+
+        ".svg":
+          "image/svg+xml"
+      };
+
+      res.writeHead(
+        200,
+        {
+          "Content-Type":
+            types[ext] ||
+            "application/octet-stream"
+        }
+      );
+
+      res.end(data);
+    }
+  );
+}
+
+/* ================================
+   SERVER
+================================ */
+
+const server =
+  http.createServer(
+    async (req, res) => {
+      try {
+        const url =
+          new URL(
+            req.url,
+            `http://localhost:${PORT}`
+          );
+
+        if (
+          url.pathname.startsWith(
+            "/api/"
+          )
+        ) {
+          await api(
+            req,
+            res,
+            url
+          );
+
+          return;
+        }
+
+        serveFile(
+          req,
+          res
+        );
+      } catch (err) {
+        console.log(
+          "Server error:",
+          err.message
+        );
+
+        sendJSON(
+          res,
+          500,
+          {
+            ok: false,
+            error:
+              "Internal server error"
+          }
+        );
+      }
+    }
+  );
+
+server.listen(
+  PORT,
+  () => {
+    console.log(
+      "Fanuel Football Prediction running on port " +
+      PORT
+    );
+
+    console.log(
+      "Sportmonks token configured:",
+      Boolean(TOKEN)
+    );
+  }
+);
 ```
