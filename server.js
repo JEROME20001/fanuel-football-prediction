@@ -16,7 +16,7 @@ const SPORTS_KEY = process.env.THE_SPORTS_DB_KEY || "123";
 const SPORTS_BASE =
   `https://www.thesportsdb.com/api/v1/json/${SPORTS_KEY}`;
 
-const PROVIDER_MIN_INTERVAL = 2200;
+const PROVIDER_MIN_INTERVAL = 500;
 const FIXTURE_CACHE_TTL = 5 * 60 * 1000;
 const EVENT_CACHE_TTL = 30 * 60 * 1000;
 const HISTORY_CACHE_TTL = 30 * 60 * 1000;
