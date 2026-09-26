@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Fanuel Football Prediction</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #071a33;
+      color: white;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #0b2f5b;
+      padding: 20px;
+      text-align: center;
+      border-bottom: 2px solid #1683ff;
+    }
+
+    header h1 {
+      color: #4db3ff;
+      margin-bottom: 8px;
+    }
+
+    header p {
+      color: #d7e9ff;
+    }
+
+    .container {
+      width: 95%;
+      max-width: 1100px;
+      margin: 25px auto;
+    }
+
+    .card {
+      background: #0d2748;
+      border: 1px solid #174d82;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 5px 20px rgba(0,0,0,.25);
+    }
+
+    h2 {
+      color: #4db3ff;
+      margin-bottom: 15px;
+    }
+
+    input {
+      width: 100%;
+      padding: 13px;
+      border-radius: 8px;
+      border: 1px solid #3676ad;
+      background: #06172b;
+      color: white;
+      margin-bottom: 12px;
+    }
+
+    button {
+      background: #087cff;
+      color: white;
+      border: none;
+      padding: 13px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+
+    button:hover {
+      background: #0564d0;
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      background: #06172b;
+      margin-top: 10px;
+    }
+
+    .fixture {
+      background: #071d36;
+      border: 1px solid #225986;
+      padding: 15px;
+      border-radius: 10px;
+      margin-top: 12px;
+    }
+
+    .fixture strong {
+      color: #58b7ff;
+    }
+
+    .prediction {
+      background: #06172b;
+      border-left: 4px solid #1683ff;
+      padding: 15px;
+      margin-top: 15px;
+      border-radius: 8px;
+    }
+
+    .big {
+      font-size: 25px;
+      font-weight: bold;
+      color: #4db3ff;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 15px;
+    }
+
+    .stat {
+      background: #09203a;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .stat span {
+      display: block;
+      color: #9ec9ef;
+      margin-bottom: 7px;
+    }
+
+    .loading {
+      color: #ffd166;
+    }
+
+    .error {
+      color: #ff7777;
+    }
+
+    .success {
+      color: #54e38e;
+    }
+
+    footer {
+      text-align: center;
+      padding: 25px;
+      color: #8db4d8;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h1>⚽ Fanuel Football Prediction</h1>
+  <p>AI-Assisted Football Analysis & Prediction System</p>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h2>System Status</h2>
+
+    <button onclick="checkHealth()">
+      Check AI System
+    </button>
+
+    <div id="health" class="status">
+      Press the button to check the system.
+    </div>
+  </div>
+
+
+  <div class="card">
+
+    <h2>📅 Upcoming Matches</h2>
+
+    <input
+      type="date"
+      id="matchDate"
+    >
+
+    <button onclick="loadMatches()">
+      Load Matches
+    </button>
+
+    <div id="matches"></div>
+
+  </div>
+
+
+  <div class="card">
+
+    <h2>🤖 Football Analysis</h2>
+
+    <p>
+      Select an upcoming match above to run the prediction model.
+    </p>
+
+    <div id="prediction"></div>
+
+  </div>
+
+
+  <div class="card">
+
+    <h2>🧠 Prediction History</h2>
+
+    <button onclick="loadHistory()">
+      Load Previous Predictions
+    </button>
+
+    <div id="history"></div>
+
+  </div>
+
+</div>
+
+<footer>
+  Fanuel Football Prediction © 2026
+</footer>
+
+
+<script>
+
+async function checkHealth() {
+
+  const box = document.getElementById("health");
+
+  box.innerHTML =
+    '<span class="loading">Checking system...</span>';
+
+  try {
+
+    const response =
+      await fetch("/api/health");
+
+    const data =
+      await response.json();
+
+    if (data.ok) {
+
+      box.innerHTML =
+        '<span class="success">✓ System is online</span><br>' +
+        'Live Data: ' +
+        (data.liveData ? "Connected" : "Not connected");
+
+    } else {
+
+      box.innerHTML =
+        '<span class="error">System error</span>';
+
+    }
+
+  } catch (error) {
+
+    box.innerHTML =
+      '<span class="error">Unable to connect to server.</span>';
+
+  }
+
+}
+
+
+async function loadMatches() {
+
+  const date =
+    document.getElementById("matchDate").value;
+
+  const box =
+    document.getElementById("matches");
+
+  if (!date) {
+
+    box.innerHTML =
+      '<span class="error">Please select a date.</span>';
+
+    return;
+  }
+
+  box.innerHTML =
+    '<p class="loading">Loading matches...</p>';
+
+  try {
+
+    const response =
+      await fetch(
+        "/api/upcoming?date=" +
+        encodeURIComponent(date)
+      );
+
+    const matches =
+      await response.json();
+
+    if (!Array.isArray(matches) || matches.length === 0) {
+
+      box.innerHTML =
+        "<p>No matches found for this date.</p>";
+
+      return;
+    }
+
+    box.innerHTML = "";
+
+    matches.slice(0, 50).forEach(match => {
+
+      const fixture =
+        match.fixture;
+
+      const league =
+        match.league;
+
+      const home =
+        match.teams?.home;
+
+      const away =
+        match.teams?.away;
+
+      const div =
+        document.createElement("div");
+
+      div.className = "fixture";
+
+      div.innerHTML = `
+
+        <strong>
+          ${league?.name || "Football"}
+        </strong>
+
+        <br><br>
+
+        ${home?.name || "Home"}
+        <strong> VS </strong>
+        ${away?.name || "Away"}
+
+        <br><br>
+
+        <small>
+          ${fixture?.date
+            ? new Date(fixture.date).toLocaleString()
+            : ""}
+        </small>
+
+        <br><br>
+
+        <button>
+          Analyze Match
+        </button>
+      `;
+
+      const button =
+        div.querySelector("button");
+
+      button.onclick = () =>
+        analyzeMatch(fixture);
+
+      box.appendChild(div);
+
+    });
+
+  } catch (error) {
+
+    box.innerHTML =
+      '<p class="error">Failed to load matches.</p>';
+
+  }
+
+}
+
+
+async function analyzeMatch(fixture) {
+
+  const box =
+    document.getElementById("prediction");
+
+  box.innerHTML =
+    '<p class="loading">🧠 AI is analyzing the match...</p>';
+
+  try {
+
+    const response =
+      await fetch(
+        "/api/analyze-fixture",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          body: JSON.stringify({
+            fixture: fixture
+          })
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (!response.ok) {
+
+      throw new Error(
+        data.error ||
+        "Prediction failed"
+      );
+
+    }
+
+    const analysis =
+      data.analysis;
+
+    box.innerHTML = `
+
+      <div class="prediction">
+
+        <h2>
+          ${data.home} vs ${data.away}
+        </h2>
+
+        <p>
+          <strong>Prediction:</strong>
+          <span class="big">
+            ${analysis.pick}
+          </span>
+        </p>
+
+        <div class="grid">
+
+          <div class="stat">
+            <span>Home Win</span>
+            <strong>
+              ${analysis.probabilities.home}%
+            </strong>
+          </div>
+
+          <div class="stat">
+            <span>Draw</span>
+            <strong>
+              ${analysis.probabilities.draw}%
+            </strong>
+          </div>
+
+          <div class="stat">
+            <span>Away Win</span>
+            <strong>
+              ${analysis.probabilities.away}%
+            </strong>
+          </div>
+
+          <div class="stat">
+            <span>Confidence</span>
+            <strong>
+              ${analysis.confidence}%
+            </strong>
+          </div>
+
+          <div class="stat">
+            <span>Double Chance</span>
+            <strong>
+              ${analysis.doubleChance}
+            </strong>
+          </div>
+
+          <div class="stat">
+            <span>Over 2.5</span>
+            <strong>
+              ${analysis.over25}%
+            </strong>
+          </div>
+
+          <div class="stat">
+            <span>BTTS Yes</span>
+            <strong>
+              ${analysis.bttsYes}%
+            </strong>
+          </div>
+
+          <div class="stat">
+            <span>Expected Goals</span>
+            <strong>
+              ${analysis.expectedGoals.home}
+              -
+              ${analysis.expectedGoals.away}
+            </strong>
+          </div>
+
+        </div>
+
+        <br>
+
+        <p>
+          H2H games analyzed:
+          <strong>${data.h2hGames}</strong>
+        </p>
+
+      </div>
+    `;
+
+  } catch (error) {
+
+    box.innerHTML =
+      '<p class="error">' +
+      error.message +
+      "</p>";
+
+  }
+
+}
+
+
+async function loadHistory() {
+
+  const box =
+    document.getElementById("history");
+
+  box.innerHTML =
+    '<p class="loading">Loading prediction history...</p>';
+
+  try {
+
+    const response =
+      await fetch("/api/predictions");
+
+    const predictions =
+      await response.json();
+
+    if (!predictions.length) {
+
+      box.innerHTML =
+        "<p>No predictions recorded yet.</p>";
+
+      return;
+    }
+
+    box.innerHTML = "";
+
+    predictions
+      .slice(0, 20)
+      .forEach(item => {
+
+        const div =
+          document.createElement("div");
+
+        div.className =
+          "fixture";
+
+        div.innerHTML = `
+
+          <strong>
+            ${item.home}
+            VS
+            ${item.away}
+          </strong>
+
+          <br>
+
+          Prediction:
+          <strong>
+            ${item.analysis.pick}
+          </strong>
+
+          <br>
+
+          Confidence:
+          ${item.analysis.confidence}%
+
+          <br>
+
+          Date:
+          ${item.date
+            ? new Date(item.date).toLocaleString()
+            : ""}
+        `;
+
+        box.appendChild(div);
+
+      });
+
+  } catch (error) {
+
+    box.innerHTML =
+      '<p class="error">Failed to load history.</p>';
+
+  }
+
+}
+
+
+// Set today's date automatically
+document.getElementById("matchDate").value =
+  new Date().toISOString().slice(0, 10);
+
+</script>
+
+</body>
+</html>
