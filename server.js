@@ -826,18 +826,46 @@ const server =
               data.response?.[0];
           }
 
+if (!fixture) {
+  throw new Error(
+    "Tuma fixture au fixtureId."
+  );
+}
 
-          if (!fixture) {
-            throw new Error(
-              "Tuma fixture au fixtureId."
-            );
-          }
+/*
+  Hakikisha tunatumia fixture kamili kutoka API-Football.
+  Frontend inaweza kuwa imetuma fixture yenye taarifa chache.
+*/
 
+const fixtureId =
+  fixture.fixture?.id ||
+  fixture.id ||
+  body.fixtureId;
 
-          const result =
-            await analyzeFixture(
-              fixture
-            );
+if (!fixtureId) {
+  throw new Error(
+    "Fixture ID haipo."
+  );
+}
+
+const fullFixtureData =
+  await apiRequest(
+    `/fixtures?id=${fixtureId}`
+  );
+
+const fullFixture =
+  fullFixtureData.response?.[0];
+
+if (!fullFixture) {
+  throw new Error(
+    "Fixture kamili haikupatikana kutoka API-Football."
+  );
+}
+
+const result =
+  await analyzeFixture(
+    fullFixture
+  );
 
 
           sendJSON(
