@@ -9,157 +9,289 @@
   <style>
     * {
       box-sizing: border-box;
-      margin: 0;
-      padding: 0;
     }
 
     body {
-      font-family: Arial, sans-serif;
-      background: #071a33;
-      color: white;
-      min-height: 100vh;
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #061326;
+      color: #ffffff;
     }
 
     header {
-      background: #0b2f5b;
-      padding: 20px;
+      background: linear-gradient(135deg, #071a38, #0b4f91);
+      padding: 25px 18px;
       text-align: center;
-      border-bottom: 2px solid #1683ff;
+      border-bottom: 1px solid #1e5d9c;
     }
 
     header h1 {
-      color: #4db3ff;
-      margin-bottom: 8px;
+      margin: 0;
+      font-size: 28px;
     }
 
     header p {
-      color: #d7e9ff;
+      margin: 8px 0 0;
+      color: #b9d9ff;
     }
 
     .container {
       width: 95%;
-      max-width: 1100px;
+      max-width: 1200px;
       margin: 25px auto;
     }
 
-    .card {
-      background: #0d2748;
-      border: 1px solid #174d82;
-      border-radius: 12px;
+    .panel {
+      background: #0b1d35;
+      border: 1px solid #163a62;
+      border-radius: 14px;
       padding: 20px;
       margin-bottom: 20px;
-      box-shadow: 0 5px 20px rgba(0,0,0,.25);
+      box-shadow: 0 8px 25px rgba(0,0,0,.25);
     }
 
-    h2 {
-      color: #4db3ff;
-      margin-bottom: 15px;
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
     }
 
-    input {
-      width: 100%;
-      padding: 13px;
-      border-radius: 8px;
-      border: 1px solid #3676ad;
-      background: #06172b;
+    input[type="date"] {
+      background: #08182d;
       color: white;
-      margin-bottom: 12px;
+      border: 1px solid #2866a0;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 15px;
     }
 
     button {
+      border: none;
+      border-radius: 8px;
+      padding: 12px 18px;
       background: #087cff;
       color: white;
-      border: none;
-      padding: 13px 20px;
-      border-radius: 8px;
-      cursor: pointer;
+      font-size: 15px;
       font-weight: bold;
-      margin-right: 8px;
-      margin-bottom: 8px;
+      cursor: pointer;
     }
 
     button:hover {
-      background: #0564d0;
+      background: #0567d6;
+    }
+
+    button:disabled {
+      opacity: .6;
+      cursor: not-allowed;
     }
 
     .status {
+      margin-top: 15px;
       padding: 12px;
       border-radius: 8px;
-      background: #06172b;
-      margin-top: 10px;
-    }
-
-    .fixture {
-      background: #071d36;
-      border: 1px solid #225986;
-      padding: 15px;
-      border-radius: 10px;
-      margin-top: 12px;
-    }
-
-    .fixture strong {
-      color: #58b7ff;
-    }
-
-    .prediction {
-      background: #06172b;
-      border-left: 4px solid #1683ff;
-      padding: 15px;
-      margin-top: 15px;
-      border-radius: 8px;
-    }
-
-    .big {
-      font-size: 25px;
-      font-weight: bold;
-      color: #4db3ff;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
-      margin-top: 15px;
-    }
-
-    .stat {
-      background: #09203a;
-      padding: 15px;
-      border-radius: 8px;
-      text-align: center;
-    }
-
-    .stat span {
-      display: block;
-      color: #9ec9ef;
-      margin-bottom: 7px;
-    }
-
-    .loading {
-      color: #ffd166;
+      background: #08182d;
+      color: #b9d9ff;
+      display: none;
     }
 
     .error {
-      color: #ff7777;
+      color: #ff8f8f;
+      background: #35131a;
+      border: 1px solid #71303a;
     }
 
     .success {
-      color: #54e38e;
+      color: #9dffbd;
+      background: #10351f;
+      border: 1px solid #256d3d;
     }
 
-    .info {
-      color: #8ecbff;
+    .matches-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 15px;
     }
 
-    .match-count {
+    .matches-header h2 {
+      margin: 0;
+    }
+
+    .count {
+      background: #0d62ae;
+      padding: 7px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+
+    #matches {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 15px;
+    }
+
+    .match {
+      background: #08182d;
+      border: 1px solid #17456f;
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .league {
+      color: #70baff;
+      font-size: 13px;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+
+    .match-time {
+      color: #a6b8cc;
+      font-size: 13px;
+      margin-bottom: 15px;
+    }
+
+    .teams {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 8px;
+      align-items: center;
+      text-align: center;
+    }
+
+    .team {
+      font-weight: bold;
+      line-height: 1.3;
+    }
+
+    .vs {
+      color: #64b5ff;
+      font-weight: bold;
+    }
+
+    .analyze-btn {
+      width: 100%;
       margin-top: 15px;
-      color: #9ec9ef;
+    }
+
+    .prediction {
+      margin-top: 15px;
+      background: #0d2746;
+      border-radius: 10px;
+      padding: 15px;
+      border-left: 4px solid #1688ff;
+    }
+
+    .prediction h3 {
+      margin-top: 0;
+      color: #72bdff;
+    }
+
+    .pick {
+      font-size: 22px;
+      font-weight: bold;
+      margin: 8px 0;
+    }
+
+    .confidence {
+      font-size: 14px;
+      color: #bcdcff;
+    }
+
+    .probabilities {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .prob {
+      background: #08182d;
+      padding: 10px;
+      border-radius: 7px;
+      text-align: center;
+    }
+
+    .prob strong {
+      display: block;
+      margin-top: 5px;
+      font-size: 18px;
+    }
+
+    .stats {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat {
+      background: #08182d;
+      padding: 10px;
+      border-radius: 7px;
+      font-size: 13px;
+    }
+
+    .history-item {
+      border-bottom: 1px solid #193654;
+      padding: 12px 0;
+    }
+
+    .history-item:last-child {
+      border-bottom: none;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 35px 10px;
+      color: #8ea6bd;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border: 2px solid #ffffff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 7px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     footer {
       text-align: center;
+      color: #6f8aa4;
       padding: 25px;
-      color: #8db4d8;
+      font-size: 13px;
+    }
+
+    @media (max-width: 600px) {
+      header h1 {
+        font-size: 22px;
+      }
+
+      .probabilities {
+        grid-template-columns: 1fr;
+      }
+
+      .controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      input[type="date"],
+      button {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -168,74 +300,106 @@
 
 <header>
   <h1>⚽ Fanuel Football Prediction</h1>
-  <p>AI-Assisted Football Analysis & Prediction System</p>
+  <p>AI-Assisted Football Analysis & Historical Data</p>
 </header>
 
 <div class="container">
 
-  <!-- SYSTEM STATUS -->
+  <!-- CONTROL PANEL -->
+  <div class="panel">
 
-  <div class="card">
+    <h2>📅 Select Match Date</h2>
 
-    <h2>System Status</h2>
+    <div class="controls">
 
-    <button onclick="checkHealth()">
-      Check AI System
-    </button>
+      <input
+        type="date"
+        id="matchDate"
+      >
 
-    <div id="health" class="status">
-      Press the button to check the system.
+      <button
+        id="loadBtn"
+        onclick="loadMatches()"
+      >
+        Load Matches
+      </button>
+
     </div>
+
+    <div
+      id="status"
+      class="status"
+    ></div>
 
   </div>
 
 
   <!-- MATCHES -->
+  <div class="panel">
 
-  <div class="card">
+    <div class="matches-header">
 
-    <h2>📅 Upcoming Matches</h2>
+      <h2>⚽ Available Matches</h2>
 
-    <input
-      type="date"
-      id="matchDate"
-    >
+      <div
+        id="matchCount"
+        class="count"
+      >
+        0 matches
+      </div>
 
-    <button onclick="loadMatches()">
-      🔄 Load Matches
-    </button>
+    </div>
 
-    <div id="matches"></div>
+    <div id="matches">
 
-  </div>
+      <div class="empty">
+        Select a date and click
+        <b>Load Matches</b>.
+      </div>
 
-
-  <!-- PREDICTION -->
-
-  <div class="card">
-
-    <h2>🤖 Football Analysis</h2>
-
-    <p>
-      Select an upcoming match above to run the prediction model.
-    </p>
-
-    <div id="prediction"></div>
+    </div>
 
   </div>
 
 
-  <!-- HISTORY -->
+  <!-- PREDICTION HISTORY -->
+  <div class="panel">
 
-  <div class="card">
+    <div class="matches-header">
 
-    <h2>🧠 Prediction History</h2>
+      <h2>🧠 Prediction History</h2>
 
-    <button onclick="loadHistory()">
-      Load Previous Predictions
-    </button>
+      <button
+        onclick="loadPredictionHistory()"
+      >
+        Refresh
+      </button>
 
-    <div id="history"></div>
+    </div>
+
+    <div id="history">
+
+      <div class="empty">
+        No predictions loaded yet.
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- PERFORMANCE -->
+  <div class="panel">
+
+    <h2>📊 System Performance</h2>
+
+    <div id="performance">
+
+      <div class="empty">
+        Loading performance...
+      </div>
+
+    </div>
 
   </div>
 
@@ -249,793 +413,943 @@
 
 <script>
 
-/* =========================
-   HEALTH CHECK
-========================= */
+  /* =========================
+     DATE
+  ========================= */
 
-async function checkHealth() {
+  function getTanzaniaDate() {
 
-  const box =
-    document.getElementById("health");
-
-  box.innerHTML =
-    '<span class="loading">Checking system...</span>';
-
-  try {
-
-    const response =
-      await fetch(
-        "/api/health",
+    const parts =
+      new Intl.DateTimeFormat(
+        "en-CA",
         {
-          cache: "no-store"
+          timeZone: "Africa/Dar_es_Salaam",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit"
         }
-      );
+      ).formatToParts(new Date());
 
-    const data =
-      await response.json();
+    const obj = {};
 
-    if (data.ok) {
+    parts.forEach(p => {
+      if (p.type !== "literal") {
+        obj[p.type] = p.value;
+      }
+    });
 
-      box.innerHTML =
-        '<span class="success">✓ System is online</span><br>' +
-        'Live Data: ' +
-        (
-          data.liveData
-            ? '<span class="success">Connected ✓</span>'
-            : '<span class="error">Not connected ✗</span>'
-        );
-
-    } else {
-
-      box.innerHTML =
-        '<span class="error">System error</span>';
-
-    }
-
-  } catch (error) {
-
-    box.innerHTML =
-      '<span class="error">' +
-      'Unable to connect to server.' +
-      '</span>';
-
-  }
-
-}
-
-
-/* =========================
-   LOAD MATCHES
-========================= */
-
-async function loadMatches() {
-
-  const date =
-    document.getElementById(
-      "matchDate"
-    ).value;
-
-  const box =
-    document.getElementById(
-      "matches"
-    );
-
-
-  if (!date) {
-
-    box.innerHTML =
-      '<p class="error">' +
-      'Please select a date.' +
-      '</p>';
-
-    return;
+    return `${obj.year}-${obj.month}-${obj.day}`;
   }
 
 
-  box.innerHTML =
-    '<p class="loading">' +
-    '🔄 Loading football matches...' +
-    '</p>';
+  /* =========================
+     ESCAPE HTML
+  ========================= */
 
+  function escapeHTML(value) {
 
-  try {
-
-    const url =
-      "/api/upcoming?date=" +
-      encodeURIComponent(date);
-
-
-    const response =
-      await fetch(
-        url,
-        {
-          cache: "no-store"
-        }
-      );
-
-
-    /*
-      Soma response kwanza.
-    */
-
-    const raw =
-      await response.text();
-
-
-    let data;
-
-    try {
-
-      data =
-        JSON.parse(raw);
-
-    } catch {
-
-      throw new Error(
-        "Server ilirudisha data isiyoweza kusomwa."
-      );
-
+    if (value === null ||
+        value === undefined) {
+      return "";
     }
 
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
 
-    /*
-      Kama server imerudisha error,
-      ionyeshe error halisi.
-    */
 
-    if (!response.ok) {
+  /* =========================
+     STATUS
+  ========================= */
 
-      throw new Error(
-        data.error ||
-        `Server error: ${response.status}`
+  function showStatus(
+    message,
+    type = ""
+  ) {
+
+    const status =
+      document.getElementById("status");
+
+    status.style.display = "block";
+
+    status.className =
+      "status " + type;
+
+    status.innerHTML = message;
+  }
+
+
+  function hideStatus() {
+
+    const status =
+      document.getElementById("status");
+
+    status.style.display = "none";
+  }
+
+
+  /* =========================
+     LOAD MATCHES
+  ========================= */
+
+  async function loadMatches() {
+
+    const date =
+      document.getElementById(
+        "matchDate"
+      ).value;
+
+    const button =
+      document.getElementById(
+        "loadBtn"
       );
 
-    }
-
-
-    /*
-      Tunatarajia array ya fixtures.
-    */
-
-    const matches =
-      Array.isArray(data)
-        ? data
-        : data.response;
-
-
-    if (
-      !Array.isArray(matches)
-    ) {
-
-      throw new Error(
-        "Server haikurudisha fixtures katika format inayotarajiwa."
+    const container =
+      document.getElementById(
+        "matches"
       );
 
-    }
+    const count =
+      document.getElementById(
+        "matchCount"
+      );
 
+    if (!date) {
 
-    /*
-      Hakuna mechi.
-    */
-
-    if (
-      matches.length === 0
-    ) {
-
-      box.innerHTML = `
-
-        <div class="fixture">
-
-          <p class="info">
-            ⚠️ Hakuna fixture iliyopatikana
-            kwa tarehe ${date}.
-          </p>
-
-          <br>
-
-          <p>
-            Jaribu kuchagua tarehe nyingine.
-          </p>
-
-        </div>
-
-      `;
+      showStatus(
+        "Please select a date first.",
+        "error"
+      );
 
       return;
     }
 
+    button.disabled = true;
 
-    /*
-      Mechi zimepatikana.
-    */
+    button.innerHTML =
+      '<span class="spinner"></span>Loading...';
 
-    box.innerHTML = `
-
-      <p class="success match-count">
-        ✓ ${matches.length}
-        football match(s) found.
-      </p>
-
+    container.innerHTML = `
+      <div class="empty">
+        <span class="spinner"></span>
+        Loading all available matches...
+      </div>
     `;
 
+    count.textContent =
+      "Loading...";
 
-    matches
-      .slice(0, 50)
-      .forEach(
-        (match) => {
+    hideStatus();
 
-          const fixture =
-            match.fixture || {};
+    try {
 
-          const league =
-            match.league || {};
+      const response =
+        await fetch(
+          `/api/upcoming?date=${encodeURIComponent(date)}`,
+          {
+            method: "GET",
+            cache: "no-store"
+          }
+        );
 
-          const home =
-            match.teams?.home || {};
+      const text =
+        await response.text();
 
-          const away =
-            match.teams?.away || {};
+      let data;
 
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(
+          "Server returned invalid JSON."
+        );
+      }
 
-          const div =
-            document.createElement(
-              "div"
+      if (!response.ok) {
+
+        if (response.status === 429) {
+
+          throw new Error(
+            data.error ||
+            "TheSportsDB is temporarily rate-limiting requests. Please wait and try again."
+          );
+        }
+
+        throw new Error(
+          data.error ||
+          `Server error ${response.status}`
+        );
+      }
+
+      /*
+        Support both:
+        {matches: [...]}
+        and direct [...]
+      */
+
+      let matches = [];
+
+      if (Array.isArray(data)) {
+        matches = data;
+      } else if (
+        Array.isArray(data.matches)
+      ) {
+        matches = data.matches;
+      } else if (
+        Array.isArray(data.response)
+      ) {
+        matches = data.response;
+      }
+
+      /*
+        IMPORTANT:
+        NO slice(0,3) here.
+        We display ALL matches.
+      */
+
+      count.textContent =
+        `${matches.length} match${matches.length === 1 ? "" : "es"}`;
+
+      if (!matches.length) {
+
+        container.innerHTML = `
+          <div class="empty">
+            No football matches were found
+            for <b>${escapeHTML(date)}</b>.
+          </div>
+        `;
+
+        showStatus(
+          "No matches were returned by the football data provider for this date.",
+          "error"
+        );
+
+        return;
+      }
+
+      showStatus(
+        `Successfully loaded ${matches.length} football matches.`,
+        "success"
+      );
+
+      container.innerHTML = "";
+
+      /*
+        Display EVERY match returned by server.
+      */
+
+      matches.forEach(
+        (match, index) => {
+
+          const card =
+            createMatchCard(
+              match,
+              index
             );
 
-
-          div.className =
-            "fixture";
-
-
-          const matchDate =
-            fixture.date
-              ? new Date(
-                  fixture.date
-                ).toLocaleString()
-              : "Time unavailable";
-
-
-          div.innerHTML = `
-
-            <strong>
-              ${escapeHTML(
-                league.name ||
-                "Football"
-              )}
-            </strong>
-
-            <br><br>
-
-            <span>
-              ${escapeHTML(
-                home.name ||
-                "Home"
-              )}
-            </span>
-
-            <strong>
-              &nbsp; VS &nbsp;
-            </strong>
-
-            <span>
-              ${escapeHTML(
-                away.name ||
-                "Away"
-              )}
-            </span>
-
-            <br><br>
-
-            <small>
-              📅 ${escapeHTML(
-                matchDate
-              )}
-            </small>
-
-            <br><br>
-
-            <button>
-              🧠 Analyze Match
-            </button>
-
-          `;
-
-
-          const button =
-            div.querySelector(
-              "button"
-            );
-
-
-          button.onclick =
-            () => {
-
-              analyzeMatch(
-                fixture
-              );
-
-            };
-
-
-          box.appendChild(
-            div
+          container.insertAdjacentHTML(
+            "beforeend",
+            card
           );
 
         }
       );
 
+    } catch (error) {
 
-  } catch (error) {
+      console.error(error);
 
-    console.error(
-      "LOAD MATCHES ERROR:",
-      error
-    );
+      container.innerHTML = `
+        <div class="empty">
+          ❌ ${escapeHTML(error.message)}
+        </div>
+      `;
 
+      count.textContent =
+        "0 matches";
 
-    box.innerHTML = `
-
-      <div class="fixture">
-
-        <p class="error">
-          ❌ Failed to load matches.
-        </p>
-
-        <br>
-
-        <p class="error">
-          ${escapeHTML(
-            error.message
-          )}
-        </p>
-
-        <br>
-
-        <button
-          onclick="loadMatches()"
-        >
-          🔄 Try Again
-        </button>
-
-      </div>
-
-    `;
-
-  }
-
-}
-
-
-/* =========================
-   ANALYZE MATCH
-========================= */
-
-async function analyzeMatch(
-  fixture
-) {
-
-  const box =
-    document.getElementById(
-      "prediction"
-    );
-
-
-  if (
-    !fixture ||
-    !fixture.id
-  ) {
-
-    box.innerHTML =
-      '<p class="error">' +
-      'Fixture ID haipo.' +
-      '</p>';
-
-    return;
-  }
-
-
-  box.innerHTML =
-    '<p class="loading">' +
-    '🧠 AI is analyzing the match...' +
-    '</p>';
-
-
-  try {
-
-    const response =
-      await fetch(
-        "/api/analyze-fixture",
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json"
-          },
-
-          body:
-            JSON.stringify({
-              fixtureId:
-                fixture.id
-            })
-        }
+      showStatus(
+        `❌ ${escapeHTML(error.message)}`,
+        "error"
       );
 
+    } finally {
 
-    const raw =
-      await response.text();
+      button.disabled = false;
+
+      button.textContent =
+        "Load Matches";
+    }
+  }
 
 
-    let data;
+  /* =========================
+     MATCH CARD
+  ========================= */
+
+  function createMatchCard(
+    match,
+    index
+  ) {
+
+    const fixture =
+      match.fixture || {};
+
+    const league =
+      match.league || {};
+
+    const teams =
+      match.teams || {};
+
+    const home =
+      teams.home || {};
+
+    const away =
+      teams.away || {};
+
+    const date =
+      fixture.date || "";
+
+    const time =
+      fixture.time || "";
+
+    const status =
+      fixture.status || "Scheduled";
+
+    const id =
+      fixture.id || "";
+
+
+    return `
+      <div
+        class="match"
+        id="match-${escapeHTML(id)}"
+      >
+
+        <div class="league">
+          ${escapeHTML(
+            league.name ||
+            "Football"
+          )}
+        </div>
+
+        <div class="match-time">
+          📅 ${escapeHTML(date)}
+          ${time
+            ? ` • 🕒 ${escapeHTML(time)}`
+            : ""}
+          <br>
+          Status:
+          ${escapeHTML(status)}
+        </div>
+
+        <div class="teams">
+
+          <div class="team">
+            ${escapeHTML(
+              home.name ||
+              "Home"
+            )}
+          </div>
+
+          <div class="vs">
+            VS
+          </div>
+
+          <div class="team">
+            ${escapeHTML(
+              away.name ||
+              "Away"
+            )}
+          </div>
+
+        </div>
+
+        <button
+          class="analyze-btn"
+          onclick='analyzeMatch(${JSON.stringify(match).replace(/</g, "\\u003c")})'
+        >
+          🧠 Analyze Match
+        </button>
+
+        <div
+          id="prediction-${escapeHTML(id)}"
+        ></div>
+
+      </div>
+    `;
+  }
+
+
+  /* =========================
+     ANALYZE MATCH
+  ========================= */
+
+  async function analyzeMatch(
+    match
+  ) {
+
+    const fixture =
+      match.fixture || {};
+
+    const fixtureId =
+      fixture.id;
+
+    const predictionBox =
+      document.getElementById(
+        `prediction-${fixtureId}`
+      );
+
+    if (!predictionBox) {
+      return;
+    }
+
+    predictionBox.innerHTML = `
+      <div class="prediction">
+        <span class="spinner"></span>
+        AI is analyzing this match...
+        <br><br>
+        Checking historical data,
+        team form and statistical patterns.
+      </div>
+    `;
 
     try {
 
-      data =
-        JSON.parse(raw);
+      const response =
+        await fetch(
+          "/api/analyze-fixture",
+          {
+            method: "POST",
 
-    } catch {
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
 
-      throw new Error(
-        "Server ilirudisha response isiyosomika."
+            body: JSON.stringify({
+              fixtureId:
+                fixtureId
+            })
+          }
+        );
+
+      const text =
+        await response.text();
+
+      let data;
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(
+          "Invalid response from server."
+        );
+      }
+
+      if (!response.ok) {
+
+        throw new Error(
+          data.error ||
+          `Analysis failed (${response.status})`
+        );
+      }
+
+      if (
+        !data.prediction
+      ) {
+
+        throw new Error(
+          "No prediction was returned."
+        );
+      }
+
+      displayPrediction(
+        predictionBox,
+        data.prediction
       );
 
+      loadPredictionHistory();
+
+      loadPerformance();
+
+    } catch (error) {
+
+      console.error(error);
+
+      predictionBox.innerHTML = `
+        <div class="prediction">
+          ❌ Analysis failed:
+          ${escapeHTML(
+            error.message
+          )}
+        </div>
+      `;
     }
+  }
 
 
-    if (!response.ok) {
+  /* =========================
+     DISPLAY PREDICTION
+  ========================= */
 
-      throw new Error(
-        data.error ||
-        "Prediction failed"
-      );
+  function displayPrediction(
+    box,
+    prediction
+  ) {
 
-    }
+    const probabilities =
+      prediction.probabilities || {};
 
+    const expected =
+      prediction.expectedGoals || {};
 
-    const analysis =
-      data.analysis;
+    const form =
+      prediction.form || {};
 
+    const homeForm =
+      form.home || {};
 
-    if (!analysis) {
-
-      throw new Error(
-        "Analysis haikurudishwa na server."
-      );
-
-    }
+    const awayForm =
+      form.away || {};
 
 
     box.innerHTML = `
 
       <div class="prediction">
 
-        <h2>
-          ${escapeHTML(
-            data.home ||
-            "Home"
-          )}
-          vs
-          ${escapeHTML(
-            data.away ||
-            "Away"
-          )}
-        </h2>
+        <h3>
+          🧠 AI Prediction
+        </h3>
 
-        <p>
-          <strong>Prediction:</strong>
+        <div class="pick">
+          ${escapeHTML(
+            prediction.pick ||
+            "N/A"
+          )}
+        </div>
 
-          <span class="big">
+        <div class="confidence">
+          Confidence:
+          <b>
             ${escapeHTML(
-              analysis.pick
-            )}
-          </span>
-        </p>
+              prediction.confidence ??
+              0
+            )}%
+          </b>
+        </div>
 
 
-        <div class="grid">
+        <div class="probabilities">
 
-          <div class="stat">
-            <span>Home Win</span>
+          <div class="prob">
+            HOME
             <strong>
-              ${analysis.probabilities.home}%
+              ${escapeHTML(
+                probabilities.home ??
+                0
+              )}%
             </strong>
           </div>
 
-
-          <div class="stat">
-            <span>Draw</span>
+          <div class="prob">
+            DRAW
             <strong>
-              ${analysis.probabilities.draw}%
+              ${escapeHTML(
+                probabilities.draw ??
+                0
+              )}%
             </strong>
           </div>
 
-
-          <div class="stat">
-            <span>Away Win</span>
+          <div class="prob">
+            AWAY
             <strong>
-              ${analysis.probabilities.away}%
-            </strong>
-          </div>
-
-
-          <div class="stat">
-            <span>Confidence</span>
-            <strong>
-              ${analysis.confidence}%
-            </strong>
-          </div>
-
-
-          <div class="stat">
-            <span>Double Chance</span>
-            <strong>
-              ${analysis.doubleChance}
-            </strong>
-          </div>
-
-
-          <div class="stat">
-            <span>Over 2.5</span>
-            <strong>
-              ${analysis.over25}%
-            </strong>
-          </div>
-
-
-          <div class="stat">
-            <span>BTTS Yes</span>
-            <strong>
-              ${analysis.bttsYes}%
-            </strong>
-          </div>
-
-
-          <div class="stat">
-            <span>Expected Goals</span>
-            <strong>
-              ${analysis.expectedGoals.home}
-              -
-              ${analysis.expectedGoals.away}
+              ${escapeHTML(
+                probabilities.away ??
+                0
+              )}%
             </strong>
           </div>
 
         </div>
 
 
-        <br>
+        <div class="stats">
+
+          <div class="stat">
+            <b>Double Chance</b><br>
+            ${escapeHTML(
+              prediction.doubleChance ||
+              "N/A"
+            )}
+          </div>
+
+          <div class="stat">
+            <b>Over 2.5</b><br>
+            ${escapeHTML(
+              prediction.over25 ??
+              0
+            )}%
+          </div>
+
+          <div class="stat">
+            <b>BTTS</b><br>
+            ${escapeHTML(
+              prediction.btts ??
+              0
+            )}%
+          </div>
+
+          <div class="stat">
+            <b>Expected Goals</b><br>
+            ${escapeHTML(
+              expected.home ??
+              0
+            )}
+            -
+            ${escapeHTML(
+              expected.away ??
+              0
+            )}
+          </div>
+
+        </div>
 
 
-        <p>
-          H2H games analyzed:
-          <strong>
-            ${data.h2hGames || 0}
-          </strong>
-        </p>
+        <div class="stats">
+
+          <div class="stat">
+
+            <b>Home Form</b><br>
+
+            Games:
+            ${escapeHTML(
+              homeForm.games ??
+              0
+            )}
+
+            <br>
+
+            Wins:
+            ${escapeHTML(
+              homeForm.wins ??
+              0
+            )}
+
+            <br>
+
+            Draws:
+            ${escapeHTML(
+              homeForm.draws ??
+              0
+            )}
+
+            <br>
+
+            Losses:
+            ${escapeHTML(
+              homeForm.losses ??
+              0
+            )}
+
+          </div>
 
 
-        <br>
+          <div class="stat">
+
+            <b>Away Form</b><br>
+
+            Games:
+            ${escapeHTML(
+              awayForm.games ??
+              0
+            )}
+
+            <br>
+
+            Wins:
+            ${escapeHTML(
+              awayForm.wins ??
+              0
+            )}
+
+            <br>
+
+            Draws:
+            ${escapeHTML(
+              awayForm.draws ??
+              0
+            )}
+
+            <br>
+
+            Losses:
+            ${escapeHTML(
+              awayForm.losses ??
+              0
+            )}
+
+          </div>
+
+        </div>
 
 
-        <p class="success">
-          ✓ Prediction saved to history.
-        </p>
+        <div
+          style="
+            margin-top:12px;
+            font-size:12px;
+            color:#89a7c2;
+          "
+        >
+
+          Model:
+          ${escapeHTML(
+            prediction.model ||
+            "Football Analysis"
+          )}
+
+          <br>
+
+          Bookmaker odds used:
+          <b>
+            ${prediction.usesOdds === false
+              ? "NO"
+              : "YES"}
+          </b>
+
+        </div>
 
       </div>
 
     `;
-
-
-  } catch (error) {
-
-    console.error(
-      "ANALYSIS ERROR:",
-      error
-    );
-
-
-    box.innerHTML =
-      '<p class="error">' +
-      escapeHTML(
-        error.message
-      ) +
-      '</p>';
-
   }
 
-}
 
+  /* =========================
+     HISTORY
+  ========================= */
 
-/* =========================
-   HISTORY
-========================= */
+  async function loadPredictionHistory() {
 
-async function loadHistory() {
-
-  const box =
-    document.getElementById(
-      "history"
-    );
-
-
-  box.innerHTML =
-    '<p class="loading">' +
-    'Loading prediction history...' +
-    '</p>';
-
-
-  try {
-
-    const response =
-      await fetch(
-        "/api/predictions",
-        {
-          cache: "no-store"
-        }
+    const history =
+      document.getElementById(
+        "history"
       );
 
+    try {
 
-    const predictions =
-      await response.json();
+      const response =
+        await fetch(
+          "/api/predictions",
+          {
+            cache: "no-store"
+          }
+        );
 
+      const data =
+        await response.json();
 
-    if (
-      !Array.isArray(
+      const predictions =
+        data.predictions || [];
+
+      if (!predictions.length) {
+
+        history.innerHTML = `
+          <div class="empty">
+            No predictions yet.
+          </div>
+        `;
+
+        return;
+      }
+
+      history.innerHTML =
         predictions
-      ) ||
-      predictions.length === 0
-    ) {
+          .slice(0, 30)
+          .map(p => {
 
-      box.innerHTML =
-        "<p>No predictions recorded yet.</p>";
+            const result =
+              p.result;
 
-      return;
+            return `
+              <div class="history-item">
+
+                <b>
+                  ${escapeHTML(
+                    p.homeTeam
+                  )}
+                  vs
+                  ${escapeHTML(
+                    p.awayTeam
+                  )}
+                </b>
+
+                <br>
+
+                Pick:
+                <b>
+                  ${escapeHTML(
+                    p.prediction?.pick ||
+                    "N/A"
+                  )}
+                </b>
+
+                <br>
+
+                Confidence:
+                ${escapeHTML(
+                  p.prediction?.confidence ??
+                  0
+                )}%
+
+                <br>
+
+                Date:
+                ${escapeHTML(
+                  p.date || ""
+                )}
+
+                ${
+                  result
+                    ? `
+                      <br>
+                      Result:
+                      ${escapeHTML(
+                        result.homeScore
+                      )}
+                      -
+                      ${escapeHTML(
+                        result.awayScore
+                      )}
+
+                      ${
+                        result.correct
+                          ? " ✅ Correct"
+                          : " ❌ Wrong"
+                      }
+                    `
+                    : ""
+                }
+
+              </div>
+            `;
+
+          })
+          .join("");
+
+    } catch (error) {
+
+      history.innerHTML = `
+        <div class="empty">
+          Unable to load prediction history.
+        </div>
+      `;
     }
-
-
-    box.innerHTML = "";
-
-
-    predictions
-      .slice(0, 20)
-      .forEach(
-        item => {
-
-          const div =
-            document.createElement(
-              "div"
-            );
-
-
-          div.className =
-            "fixture";
-
-
-          div.innerHTML = `
-
-            <strong>
-              ${escapeHTML(
-                item.home
-              )}
-              VS
-              ${escapeHTML(
-                item.away
-              )}
-            </strong>
-
-            <br>
-
-            Prediction:
-
-            <strong>
-              ${escapeHTML(
-                item.analysis?.pick ||
-                "N/A"
-              )}
-            </strong>
-
-            <br>
-
-            Confidence:
-
-            ${
-              item.analysis?.confidence ??
-              "N/A"
-            }%
-
-            <br>
-
-            Date:
-
-            ${
-              item.date
-                ? new Date(
-                    item.date
-                  ).toLocaleString()
-                : "N/A"
-            }
-
-          `;
-
-
-          box.appendChild(
-            div
-          );
-
-        }
-      );
-
-
-  } catch (error) {
-
-    box.innerHTML =
-      '<p class="error">' +
-      'Failed to load history.' +
-      '</p>';
-
   }
 
-}
 
+  /* =========================
+     PERFORMANCE
+  ========================= */
 
-/* =========================
-   ESCAPE HTML
-========================= */
+  async function loadPerformance() {
 
-function escapeHTML(
-  value
-) {
+    const performance =
+      document.getElementById(
+        "performance"
+      );
 
-  const div =
-    document.createElement(
-      "div"
-    );
+    try {
 
-  div.textContent =
-    String(
-      value ?? ""
-    );
+      const response =
+        await fetch(
+          "/api/performance",
+          {
+            cache: "no-store"
+          }
+        );
 
-  return div.innerHTML;
-}
+      const data =
+        await response.json();
 
+      const p =
+        data.performance || {};
 
-/* =========================
-   TODAY'S DATE
-   Tanzania local date
-========================= */
+      performance.innerHTML = `
 
-function getTanzaniaDate() {
+        <div class="stats">
 
-  return new Intl.DateTimeFormat(
-    "en-CA",
-    {
-      timeZone:
-        "Africa/Dar_es_Salaam",
+          <div class="stat">
+            <b>Total Predictions</b><br>
+            ${escapeHTML(
+              p.totalPredictions ??
+              0
+            )}
+          </div>
 
-      year: "numeric",
+          <div class="stat">
+            <b>Completed</b><br>
+            ${escapeHTML(
+              p.completed ??
+              0
+            )}
+          </div>
 
-      month: "2-digit",
+          <div class="stat">
+            <b>Correct</b><br>
+            ${escapeHTML(
+              p.correct ??
+              0
+            )}
+          </div>
 
-      day: "2-digit"
+          <div class="stat">
+            <b>Accuracy</b><br>
+            ${escapeHTML(
+              p.accuracy ??
+              0
+            )}%
+          </div>
+
+        </div>
+
+      `;
+
+    } catch (error) {
+
+      performance.innerHTML = `
+        <div class="empty">
+          Performance unavailable.
+        </div>
+      `;
     }
-  ).format(
-    new Date()
+  }
+
+
+  /* =========================
+     INITIALIZE
+  ========================= */
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+
+      document.getElementById(
+        "matchDate"
+      ).value =
+        getTanzaniaDate();
+
+      loadPredictionHistory();
+
+      loadPerformance();
+
+    }
   );
-
-}
-
-
-document.getElementById(
-  "matchDate"
-).value =
-  getTanzaniaDate();
-
-
-/* =========================
-   AUTO HEALTH CHECK
-========================= */
-
-checkHealth();
 
 </script>
 
