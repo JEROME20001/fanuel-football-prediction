@@ -759,42 +759,31 @@ const server =
 
         /* UPCOMING */
 
-        if (
-          req.method === "GET" &&
-          req.url.startsWith(
-            "/api/upcoming"
-          )
-        ) {
+if (
+  req.method === "GET" &&
+  req.url.startsWith("/api/upcoming")
+) {
+  const url = new URL(
+    req.url,
+    "http://localhost"
+  );
 
-          const url =
-            new URL(
-              req.url,
-              "http://localhost"
-            );
+  const date =
+    url.searchParams.get("date") ||
+    new Date().toISOString().slice(0, 10);
 
-          const date =
-            url.searchParams.get(
-              "date"
-            ) ||
-            new Date()
-              .toISOString()
-              .slice(0, 10);
+  const data = await apiRequest(
+    `/fixtures?date=${date}`
+  );
 
+  sendJSON(
+    res,
+    200,
+    data.response || []
+  );
 
-          const data =
-            await apiRequest(
-              `/fixtures?date=${date}`
-            );
-
-
-          sendJSON(
-            res,
-            200,
-            data.response || []
-          );
-
-          return;
-        }
+  return;
+}
 
 
         /* ANALYZE FIXTURE */
@@ -866,7 +855,6 @@ const result =
   await analyzeFixture(
     fullFixture
   );
-
 
           sendJSON(
             res,
