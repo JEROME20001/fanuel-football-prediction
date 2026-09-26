@@ -147,6 +147,15 @@
       color: #54e38e;
     }
 
+    .info {
+      color: #8ecbff;
+    }
+
+    .match-count {
+      margin-top: 15px;
+      color: #9ec9ef;
+    }
+
     footer {
       text-align: center;
       padding: 25px;
@@ -164,7 +173,10 @@
 
 <div class="container">
 
+  <!-- SYSTEM STATUS -->
+
   <div class="card">
+
     <h2>System Status</h2>
 
     <button onclick="checkHealth()">
@@ -174,8 +186,11 @@
     <div id="health" class="status">
       Press the button to check the system.
     </div>
+
   </div>
 
+
+  <!-- MATCHES -->
 
   <div class="card">
 
@@ -187,13 +202,15 @@
     >
 
     <button onclick="loadMatches()">
-      Load Matches
+      🔄 Load Matches
     </button>
 
     <div id="matches"></div>
 
   </div>
 
+
+  <!-- PREDICTION -->
 
   <div class="card">
 
@@ -207,6 +224,8 @@
 
   </div>
 
+
+  <!-- HISTORY -->
 
   <div class="card">
 
@@ -222,6 +241,7 @@
 
 </div>
 
+
 <footer>
   Fanuel Football Prediction © 2026
 </footer>
@@ -229,9 +249,14 @@
 
 <script>
 
+/* =========================
+   HEALTH CHECK
+========================= */
+
 async function checkHealth() {
 
-  const box = document.getElementById("health");
+  const box =
+    document.getElementById("health");
 
   box.innerHTML =
     '<span class="loading">Checking system...</span>';
@@ -239,7 +264,12 @@ async function checkHealth() {
   try {
 
     const response =
-      await fetch("/api/health");
+      await fetch(
+        "/api/health",
+        {
+          cache: "no-store"
+        }
+      );
 
     const data =
       await response.json();
@@ -249,7 +279,11 @@ async function checkHealth() {
       box.innerHTML =
         '<span class="success">✓ System is online</span><br>' +
         'Live Data: ' +
-        (data.liveData ? "Connected" : "Not connected");
+        (
+          data.liveData
+            ? '<span class="success">Connected ✓</span>'
+            : '<span class="error">Not connected ✗</span>'
+        );
 
     } else {
 
@@ -261,126 +295,350 @@ async function checkHealth() {
   } catch (error) {
 
     box.innerHTML =
-      '<span class="error">Unable to connect to server.</span>';
+      '<span class="error">' +
+      'Unable to connect to server.' +
+      '</span>';
 
   }
 
 }
 
+
+/* =========================
+   LOAD MATCHES
+========================= */
 
 async function loadMatches() {
 
   const date =
-    document.getElementById("matchDate").value;
+    document.getElementById(
+      "matchDate"
+    ).value;
 
   const box =
-    document.getElementById("matches");
+    document.getElementById(
+      "matches"
+    );
+
 
   if (!date) {
 
     box.innerHTML =
-      '<span class="error">Please select a date.</span>';
+      '<p class="error">' +
+      'Please select a date.' +
+      '</p>';
 
     return;
   }
 
+
   box.innerHTML =
-    '<p class="loading">Loading matches...</p>';
+    '<p class="loading">' +
+    '🔄 Loading football matches...' +
+    '</p>';
+
 
   try {
 
+    const url =
+      "/api/upcoming?date=" +
+      encodeURIComponent(date);
+
+
     const response =
       await fetch(
-        "/api/upcoming?date=" +
-        encodeURIComponent(date)
+        url,
+        {
+          cache: "no-store"
+        }
       );
 
+
+    /*
+      Soma response kwanza.
+    */
+
+    const raw =
+      await response.text();
+
+
+    let data;
+
+    try {
+
+      data =
+        JSON.parse(raw);
+
+    } catch {
+
+      throw new Error(
+        "Server ilirudisha data isiyoweza kusomwa."
+      );
+
+    }
+
+
+    /*
+      Kama server imerudisha error,
+      ionyeshe error halisi.
+    */
+
+    if (!response.ok) {
+
+      throw new Error(
+        data.error ||
+        `Server error: ${response.status}`
+      );
+
+    }
+
+
+    /*
+      Tunatarajia array ya fixtures.
+    */
+
     const matches =
-      await response.json();
+      Array.isArray(data)
+        ? data
+        : data.response;
 
-    if (!Array.isArray(matches) || matches.length === 0) {
 
-      box.innerHTML =
-        "<p>No matches found for this date.</p>";
+    if (
+      !Array.isArray(matches)
+    ) {
+
+      throw new Error(
+        "Server haikurudisha fixtures katika format inayotarajiwa."
+      );
+
+    }
+
+
+    /*
+      Hakuna mechi.
+    */
+
+    if (
+      matches.length === 0
+    ) {
+
+      box.innerHTML = `
+
+        <div class="fixture">
+
+          <p class="info">
+            ⚠️ Hakuna fixture iliyopatikana
+            kwa tarehe ${date}.
+          </p>
+
+          <br>
+
+          <p>
+            Jaribu kuchagua tarehe nyingine.
+          </p>
+
+        </div>
+
+      `;
 
       return;
     }
 
-    box.innerHTML = "";
 
-    matches.slice(0, 50).forEach(match => {
+    /*
+      Mechi zimepatikana.
+    */
 
-      const fixture =
-        match.fixture;
+    box.innerHTML = `
 
-      const league =
-        match.league;
+      <p class="success match-count">
+        ✓ ${matches.length}
+        football match(s) found.
+      </p>
 
-      const home =
-        match.teams?.home;
+    `;
 
-      const away =
-        match.teams?.away;
 
-      const div =
-        document.createElement("div");
+    matches
+      .slice(0, 50)
+      .forEach(
+        (match) => {
 
-      div.className = "fixture";
+          const fixture =
+            match.fixture || {};
 
-      div.innerHTML = `
+          const league =
+            match.league || {};
 
-        <strong>
-          ${league?.name || "Football"}
-        </strong>
+          const home =
+            match.teams?.home || {};
 
-        <br><br>
+          const away =
+            match.teams?.away || {};
 
-        ${home?.name || "Home"}
-        <strong> VS </strong>
-        ${away?.name || "Away"}
 
-        <br><br>
+          const div =
+            document.createElement(
+              "div"
+            );
 
-        <small>
-          ${fixture?.date
-            ? new Date(fixture.date).toLocaleString()
-            : ""}
-        </small>
 
-        <br><br>
+          div.className =
+            "fixture";
 
-        <button>
-          Analyze Match
-        </button>
-      `;
 
-      const button =
-        div.querySelector("button");
+          const matchDate =
+            fixture.date
+              ? new Date(
+                  fixture.date
+                ).toLocaleString()
+              : "Time unavailable";
 
-      button.onclick = () =>
-        analyzeMatch(fixture);
 
-      box.appendChild(div);
+          div.innerHTML = `
 
-    });
+            <strong>
+              ${escapeHTML(
+                league.name ||
+                "Football"
+              )}
+            </strong>
+
+            <br><br>
+
+            <span>
+              ${escapeHTML(
+                home.name ||
+                "Home"
+              )}
+            </span>
+
+            <strong>
+              &nbsp; VS &nbsp;
+            </strong>
+
+            <span>
+              ${escapeHTML(
+                away.name ||
+                "Away"
+              )}
+            </span>
+
+            <br><br>
+
+            <small>
+              📅 ${escapeHTML(
+                matchDate
+              )}
+            </small>
+
+            <br><br>
+
+            <button>
+              🧠 Analyze Match
+            </button>
+
+          `;
+
+
+          const button =
+            div.querySelector(
+              "button"
+            );
+
+
+          button.onclick =
+            () => {
+
+              analyzeMatch(
+                fixture
+              );
+
+            };
+
+
+          box.appendChild(
+            div
+          );
+
+        }
+      );
+
 
   } catch (error) {
 
-    box.innerHTML =
-      '<p class="error">Failed to load matches.</p>';
+    console.error(
+      "LOAD MATCHES ERROR:",
+      error
+    );
+
+
+    box.innerHTML = `
+
+      <div class="fixture">
+
+        <p class="error">
+          ❌ Failed to load matches.
+        </p>
+
+        <br>
+
+        <p class="error">
+          ${escapeHTML(
+            error.message
+          )}
+        </p>
+
+        <br>
+
+        <button
+          onclick="loadMatches()"
+        >
+          🔄 Try Again
+        </button>
+
+      </div>
+
+    `;
 
   }
 
 }
 
 
-async function analyzeMatch(fixture) {
+/* =========================
+   ANALYZE MATCH
+========================= */
+
+async function analyzeMatch(
+  fixture
+) {
 
   const box =
-    document.getElementById("prediction");
+    document.getElementById(
+      "prediction"
+    );
+
+
+  if (
+    !fixture ||
+    !fixture.id
+  ) {
+
+    box.innerHTML =
+      '<p class="error">' +
+      'Fixture ID haipo.' +
+      '</p>';
+
+    return;
+  }
+
 
   box.innerHTML =
-    '<p class="loading">🧠 AI is analyzing the match...</p>';
+    '<p class="loading">' +
+    '🧠 AI is analyzing the match...' +
+    '</p>';
+
 
   try {
 
@@ -395,14 +653,34 @@ async function analyzeMatch(fixture) {
               "application/json"
           },
 
-          body: JSON.stringify({
-            fixture: fixture
-          })
+          body:
+            JSON.stringify({
+              fixtureId:
+                fixture.id
+            })
         }
       );
 
-    const data =
-      await response.json();
+
+    const raw =
+      await response.text();
+
+
+    let data;
+
+    try {
+
+      data =
+        JSON.parse(raw);
+
+    } catch {
+
+      throw new Error(
+        "Server ilirudisha response isiyosomika."
+      );
+
+    }
+
 
     if (!response.ok) {
 
@@ -413,23 +691,46 @@ async function analyzeMatch(fixture) {
 
     }
 
+
     const analysis =
       data.analysis;
+
+
+    if (!analysis) {
+
+      throw new Error(
+        "Analysis haikurudishwa na server."
+      );
+
+    }
+
 
     box.innerHTML = `
 
       <div class="prediction">
 
         <h2>
-          ${data.home} vs ${data.away}
+          ${escapeHTML(
+            data.home ||
+            "Home"
+          )}
+          vs
+          ${escapeHTML(
+            data.away ||
+            "Away"
+          )}
         </h2>
 
         <p>
           <strong>Prediction:</strong>
+
           <span class="big">
-            ${analysis.pick}
+            ${escapeHTML(
+              analysis.pick
+            )}
           </span>
         </p>
+
 
         <div class="grid">
 
@@ -440,12 +741,14 @@ async function analyzeMatch(fixture) {
             </strong>
           </div>
 
+
           <div class="stat">
             <span>Draw</span>
             <strong>
               ${analysis.probabilities.draw}%
             </strong>
           </div>
+
 
           <div class="stat">
             <span>Away Win</span>
@@ -454,12 +757,14 @@ async function analyzeMatch(fixture) {
             </strong>
           </div>
 
+
           <div class="stat">
             <span>Confidence</span>
             <strong>
               ${analysis.confidence}%
             </strong>
           </div>
+
 
           <div class="stat">
             <span>Double Chance</span>
@@ -468,6 +773,7 @@ async function analyzeMatch(fixture) {
             </strong>
           </div>
 
+
           <div class="stat">
             <span>Over 2.5</span>
             <strong>
@@ -475,12 +781,14 @@ async function analyzeMatch(fixture) {
             </strong>
           </div>
 
+
           <div class="stat">
             <span>BTTS Yes</span>
             <strong>
               ${analysis.bttsYes}%
             </strong>
           </div>
+
 
           <div class="stat">
             <span>Expected Goals</span>
@@ -493,45 +801,89 @@ async function analyzeMatch(fixture) {
 
         </div>
 
+
         <br>
+
 
         <p>
           H2H games analyzed:
-          <strong>${data.h2hGames}</strong>
+          <strong>
+            ${data.h2hGames || 0}
+          </strong>
+        </p>
+
+
+        <br>
+
+
+        <p class="success">
+          ✓ Prediction saved to history.
         </p>
 
       </div>
+
     `;
+
 
   } catch (error) {
 
+    console.error(
+      "ANALYSIS ERROR:",
+      error
+    );
+
+
     box.innerHTML =
       '<p class="error">' +
-      error.message +
-      "</p>";
+      escapeHTML(
+        error.message
+      ) +
+      '</p>';
 
   }
 
 }
 
 
+/* =========================
+   HISTORY
+========================= */
+
 async function loadHistory() {
 
   const box =
-    document.getElementById("history");
+    document.getElementById(
+      "history"
+    );
+
 
   box.innerHTML =
-    '<p class="loading">Loading prediction history...</p>';
+    '<p class="loading">' +
+    'Loading prediction history...' +
+    '</p>';
+
 
   try {
 
     const response =
-      await fetch("/api/predictions");
+      await fetch(
+        "/api/predictions",
+        {
+          cache: "no-store"
+        }
+      );
+
 
     const predictions =
       await response.json();
 
-    if (!predictions.length) {
+
+    if (
+      !Array.isArray(
+        predictions
+      ) ||
+      predictions.length === 0
+    ) {
 
       box.innerHTML =
         "<p>No predictions recorded yet.</p>";
@@ -539,63 +891,151 @@ async function loadHistory() {
       return;
     }
 
+
     box.innerHTML = "";
+
 
     predictions
       .slice(0, 20)
-      .forEach(item => {
+      .forEach(
+        item => {
 
-        const div =
-          document.createElement("div");
+          const div =
+            document.createElement(
+              "div"
+            );
 
-        div.className =
-          "fixture";
 
-        div.innerHTML = `
+          div.className =
+            "fixture";
 
-          <strong>
-            ${item.home}
-            VS
-            ${item.away}
-          </strong>
 
-          <br>
+          div.innerHTML = `
 
-          Prediction:
-          <strong>
-            ${item.analysis.pick}
-          </strong>
+            <strong>
+              ${escapeHTML(
+                item.home
+              )}
+              VS
+              ${escapeHTML(
+                item.away
+              )}
+            </strong>
 
-          <br>
+            <br>
 
-          Confidence:
-          ${item.analysis.confidence}%
+            Prediction:
 
-          <br>
+            <strong>
+              ${escapeHTML(
+                item.analysis?.pick ||
+                "N/A"
+              )}
+            </strong>
 
-          Date:
-          ${item.date
-            ? new Date(item.date).toLocaleString()
-            : ""}
-        `;
+            <br>
 
-        box.appendChild(div);
+            Confidence:
 
-      });
+            ${
+              item.analysis?.confidence ??
+              "N/A"
+            }%
+
+            <br>
+
+            Date:
+
+            ${
+              item.date
+                ? new Date(
+                    item.date
+                  ).toLocaleString()
+                : "N/A"
+            }
+
+          `;
+
+
+          box.appendChild(
+            div
+          );
+
+        }
+      );
+
 
   } catch (error) {
 
     box.innerHTML =
-      '<p class="error">Failed to load history.</p>';
+      '<p class="error">' +
+      'Failed to load history.' +
+      '</p>';
 
   }
 
 }
 
 
-// Set today's date automatically
-document.getElementById("matchDate").value =
-  new Date().toISOString().slice(0, 10);
+/* =========================
+   ESCAPE HTML
+========================= */
+
+function escapeHTML(
+  value
+) {
+
+  const div =
+    document.createElement(
+      "div"
+    );
+
+  div.textContent =
+    String(
+      value ?? ""
+    );
+
+  return div.innerHTML;
+}
+
+
+/* =========================
+   TODAY'S DATE
+   Tanzania local date
+========================= */
+
+function getTanzaniaDate() {
+
+  return new Intl.DateTimeFormat(
+    "en-CA",
+    {
+      timeZone:
+        "Africa/Dar_es_Salaam",
+
+      year: "numeric",
+
+      month: "2-digit",
+
+      day: "2-digit"
+    }
+  ).format(
+    new Date()
+  );
+
+}
+
+
+document.getElementById(
+  "matchDate"
+).value =
+  getTanzaniaDate();
+
+
+/* =========================
+   AUTO HEALTH CHECK
+========================= */
+
+checkHealth();
 
 </script>
 
