@@ -148,25 +148,51 @@ async function getFixtures(date) {
     return cached;
   }
 
+  const endpoint =
+    "/fixtures?date=" +
+    encodeURIComponent(date) +
+    "&timezone=Africa%2FDar_es_Salaam";
+
   const response =
-    await apiRequest(
-      "/fixtures?date=" +
-      encodeURIComponent(date)
-    );
+    await apiRequest(endpoint);
 
   const fixtures =
     Array.isArray(response.response)
       ? response.response
       : [];
 
+  console.log(
+    "API-Football:",
+    date,
+    "fixtures:",
+    fixtures.length
+  );
+
+  /*
+   * API inaweza kurudisha errors bila
+   * HTTP error.
+   */
+  if (
+    Array.isArray(response.errors) &&
+    response.errors.length > 0
+  ) {
+    throw new Error(
+      "API-Football: " +
+      response.errors.join(", ")
+    );
+  }
+
   if (!fixtures.length) {
     return {
       ok: true,
       provider: "API-Football",
       date,
+      timezone:
+        "Africa/Dar_es_Salaam",
       count: 0,
       matches: [],
-      message: "Fixtures not found"
+      message:
+        "Hakuna mechi zilizorudishwa na API-Football kwa tarehe hii."
     };
   }
 
@@ -177,6 +203,8 @@ async function getFixtures(date) {
     ok: true,
     provider: "API-Football",
     date,
+    timezone:
+      "Africa/Dar_es_Salaam",
     count: matches.length,
     matches
   };
