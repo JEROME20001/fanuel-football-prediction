@@ -17,16 +17,22 @@ if (!fs.existsSync(DATA_DIR)) {
 if (!fs.existsSync(DB_FILE)) {
   fs.writeFileSync(
     DB_FILE,
-    JSON.stringify({
-      predictions: [],
-      results: []
-    }, null, 2)
+    JSON.stringify(
+      {
+        predictions: [],
+        results: []
+      },
+      null,
+      2
+    )
   );
 }
 
 function readDB() {
   try {
-    const db = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+    const db = JSON.parse(
+      fs.readFileSync(DB_FILE, "utf8")
+    );
 
     if (!Array.isArray(db.predictions)) {
       db.predictions = [];
@@ -37,7 +43,7 @@ function readDB() {
     }
 
     return db;
-  } catch {
+  } catch (error) {
     return {
       predictions: [],
       results: []
@@ -56,7 +62,8 @@ function sendJSON(res, status, data) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Cache-Control": "no-store"
   });
 
   res.end(JSON.stringify(data));
@@ -64,11 +71,17 @@ function sendJSON(res, status, data) {
 
 function sendFile(res, filePath, contentType) {
   res.writeHead(200, {
-    "Content-Type": contentType
+    "Content-Type": contentType,
+    "Cache-Control": "no-store"
   });
 
   res.end(fs.readFileSync(filePath));
 }
+
+
+/* =========================
+   API-FOOTBALL REQUEST
+========================= */
 
 async function apiRequest(endpoint) {
   if (!API_KEY) {
@@ -86,11 +99,30 @@ async function apiRequest(endpoint) {
     }
   );
 
-  const data = await response.json();
+  let data;
+
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(
+      `API-Football ilirudisha response isiyosomika. HTTP ${response.status}`
+    );
+  }
 
   if (!response.ok) {
     throw new Error(
       `API-Football error: HTTP ${response.status}`
+    );
+  }
+
+  if (
+    data &&
+    data.errors &&
+    Object.keys(data.errors).length > 0
+  ) {
+    throw new Error(
+      "API-Football: " +
+      JSON.stringify(data.errors)
     );
   }
 
@@ -99,17 +131,56 @@ async function apiRequest(endpoint) {
 
 
 /* =========================
+   DATE HELPERS
+========================= */
+
+function formatDateLocal(date) {
+  const year = date.getFullYear();
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(dateString, days) {
+  const date = new Date(
+    `${dateString}T12:00:00Z`
+  );
+
+  date.setUTCDate(
+    date.getUTCDate() + days
+  );
+
+  return date
+    .toISOString()
+    .slice(0, 10);
+}
+
+
+/* =========================
    FORM ANALYSIS
 ========================= */
 
 function getFormStats(form) {
-  const text = String(form || "").toUpperCase();
+  const text = String(
+    form || ""
+  ).toUpperCase();
 
-  const wins = (text.match(/W/g) || []).length;
-  const draws = (text.match(/D/g) || []).length;
-  const losses = (text.match(/L/g) || []).length;
+  const wins =
+    (text.match(/W/g) || []).length;
 
-  const total = wins + draws + losses || 1;
+  const draws =
+    (text.match(/D/g) || []).length;
+
+  const losses =
+    (text.match(/L/g) || []).length;
+
+  const total =
+    wins + draws + losses || 1;
 
   return {
     wins: wins / total,
@@ -124,10 +195,16 @@ function getFormStats(form) {
 ========================= */
 
 function poisson(k, lambda) {
-  let probability = Math.exp(-lambda);
+  let probability =
+    Math.exp(-lambda);
+
   let term = 1;
 
-  for (let i = 1; i <= k; i++) {
+  for (
+    let i = 1;
+    i <= k;
+    i++
+  ) {
     term *= lambda / i;
   }
 
@@ -142,9 +219,12 @@ function poisson(k, lambda) {
 function getLearningAdjustment() {
   const db = readDB();
 
-  const completed = db.predictions.filter(
-    p => p.status === "correct" || p.status === "incorrect"
-  );
+  const completed =
+    db.predictions.filter(
+      p =>
+        p.status === "correct" ||
+        p.status === "incorrect"
+    );
 
   if (completed.length < 5) {
     return {
@@ -154,16 +234,14 @@ function getLearningAdjustment() {
     };
   }
 
-  const correct = completed.filter(
-    p => p.status === "correct"
-  ).length;
+  const correct =
+    completed.filter(
+      p =>
+        p.status === "correct"
+    ).length;
 
-  const accuracy = correct / completed.length;
-
-  /*
-    Mfumo haujifanyi kuwa accurate kwa sababu tu
-    kuna data kidogo. Adjustment inakuwa ndogo.
-  */
+  const accuracy =
+    correct / completed.length;
 
   let adjustment = 0;
 
@@ -177,18 +255,22 @@ function getLearningAdjustment() {
 
   return {
     sampleSize: completed.length,
-    accuracy: Number((accuracy * 100).toFixed(1)),
+    accuracy: Number(
+      (accuracy * 100).toFixed(1)
+    ),
     adjustment
   };
 }
 
 
 /* =========================
-   PREDICTION ENGINE
+   PREDICTION MODEL
 ========================= */
 
-function predictionModel(home, away) {
-
+function predictionModel(
+  home,
+  away
+) {
   const homeForm =
     getFormStats(home.form);
 
@@ -196,19 +278,25 @@ function predictionModel(home, away) {
     getFormStats(away.form);
 
   const homeGF =
-    Number(home.goals?.for?.average) || 1.2;
+    Number(
+      home.goals?.for?.average
+    ) || 1.2;
 
   const homeGA =
-    Number(home.goals?.against?.average) || 1.2;
+    Number(
+      home.goals?.against?.average
+    ) || 1.2;
 
   const awayGF =
-    Number(away.goals?.for?.average) || 1.2;
+    Number(
+      away.goals?.for?.average
+    ) || 1.2;
 
   const awayGA =
-    Number(away.goals?.against?.average) || 1.2;
+    Number(
+      away.goals?.against?.average
+    ) || 1.2;
 
-
-  /* Form strength */
 
   const homeFormBoost =
     0.25 * homeForm.wins -
@@ -218,8 +306,6 @@ function predictionModel(home, away) {
     0.25 * awayForm.wins -
     0.12 * awayForm.losses;
 
-
-  /* Expected goals */
 
   let expectedHomeGoals =
     0.60 * homeGF +
@@ -233,12 +319,10 @@ function predictionModel(home, away) {
     awayFormBoost;
 
 
-  /* Historical learning */
-
   const learning =
     getLearningAdjustment();
 
-  if (learning.adjustment > 0) {
+  if (learning.adjustment !== 0) {
     expectedHomeGoals *=
       1 + learning.adjustment * 0.5;
 
@@ -248,10 +332,16 @@ function predictionModel(home, away) {
 
 
   expectedHomeGoals =
-    Math.max(0.20, expectedHomeGoals);
+    Math.max(
+      0.20,
+      expectedHomeGoals
+    );
 
   expectedAwayGoals =
-    Math.max(0.20, expectedAwayGoals);
+    Math.max(
+      0.20,
+      expectedAwayGoals
+    );
 
 
   let homeWin = 0;
@@ -286,10 +376,13 @@ function predictionModel(home, away) {
           expectedAwayGoals
         );
 
-      totalProbability += probability;
+      totalProbability +=
+        probability;
 
 
-      if (homeGoals > awayGoals) {
+      if (
+        homeGoals > awayGoals
+      ) {
         homeWin += probability;
 
       } else if (
@@ -303,7 +396,8 @@ function predictionModel(home, away) {
 
 
       if (
-        homeGoals + awayGoals >= 3
+        homeGoals +
+          awayGoals >= 3
       ) {
         over25 += probability;
       }
@@ -319,11 +413,20 @@ function predictionModel(home, away) {
   }
 
 
-  homeWin /= totalProbability;
-  draw /= totalProbability;
-  awayWin /= totalProbability;
-  over25 /= totalProbability;
-  bttsYes /= totalProbability;
+  homeWin /=
+    totalProbability;
+
+  draw /=
+    totalProbability;
+
+  awayWin /=
+    totalProbability;
+
+  over25 /=
+    totalProbability;
+
+  bttsYes /=
+    totalProbability;
 
 
   const probabilities = [
@@ -333,14 +436,18 @@ function predictionModel(home, away) {
   ];
 
   const maximum =
-    Math.max(...probabilities);
+    Math.max(
+      ...probabilities
+    );
 
 
   let pick = "DRAW";
 
   if (maximum === homeWin) {
     pick = "HOME";
-  } else if (maximum === awayWin) {
+  } else if (
+    maximum === awayWin
+  ) {
     pick = "AWAY";
   }
 
@@ -353,7 +460,6 @@ function predictionModel(home, away) {
 
 
   return {
-
     expectedGoals: {
       home: Number(
         expectedHomeGoals.toFixed(2)
@@ -414,8 +520,9 @@ function predictionModel(home, away) {
    FIXTURE ANALYSIS
 ========================= */
 
-async function analyzeFixture(fixture) {
-
+async function analyzeFixture(
+  fixture
+) {
   const leagueId =
     fixture.league?.id;
 
@@ -470,18 +577,20 @@ async function analyzeFixture(fixture) {
 
 
   const record = {
-
     id:
       Date.now().toString(),
 
     fixtureId:
-      fixture.fixture?.id || null,
+      fixture.fixture?.id ||
+      null,
 
     date:
-      fixture.fixture?.date || null,
+      fixture.fixture?.date ||
+      null,
 
     league:
-      fixture.league?.name || "",
+      fixture.league?.name ||
+      "",
 
     home:
       homeTeam.name,
@@ -498,7 +607,8 @@ async function analyzeFixture(fixture) {
     analysis,
 
     h2hGames:
-      h2h.response?.length || 0,
+      h2h.response?.length ||
+      0,
 
     status:
       "pending",
@@ -514,7 +624,9 @@ async function analyzeFixture(fixture) {
   const database =
     readDB();
 
-  database.predictions.unshift(record);
+  database.predictions.unshift(
+    record
+  );
 
   saveDB(database);
 
@@ -523,11 +635,10 @@ async function analyzeFixture(fixture) {
 
 
 /* =========================
-   READ BODY
+   READ REQUEST BODY
 ========================= */
 
 function readRequestBody(req) {
-
   return new Promise(
     (resolve, reject) => {
 
@@ -560,25 +671,34 @@ function readRequestBody(req) {
         }
       );
 
+      req.on(
+        "error",
+        reject
+      );
     }
   );
 }
 
 
 /* =========================
-   RECORD RESULT
+   MATCH RESULT
 ========================= */
 
 function determineResult(
   homeGoals,
   awayGoals
 ) {
-
-  if (homeGoals > awayGoals) {
+  if (
+    homeGoals >
+    awayGoals
+  ) {
     return "HOME";
   }
 
-  if (homeGoals < awayGoals) {
+  if (
+    homeGoals <
+    awayGoals
+  ) {
     return "AWAY";
   }
 
@@ -591,7 +711,6 @@ function updatePredictionResult(
   homeGoals,
   awayGoals
 ) {
-
   const actual =
     determineResult(
       homeGoals,
@@ -623,25 +742,151 @@ function updatePredictionResult(
 
 
 /* =========================
-   SERVER
+   GET UPCOMING MATCHES
+========================= */
+
+async function getUpcomingMatches(
+  requestedDate
+) {
+  let date =
+    requestedDate;
+
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(date)
+  ) {
+    date =
+      new Date()
+        .toISOString()
+        .slice(0, 10);
+  }
+
+
+  /*
+    1. Kwanza tafuta mechi za
+       tarehe halisi.
+  */
+
+  const exact =
+    await apiRequest(
+      `/fixtures?date=${date}`
+    );
+
+  let matches =
+    Array.isArray(exact.response)
+      ? exact.response
+      : [];
+
+
+  /*
+    2. Kama hakuna mechi,
+       tafuta ndani ya siku 7.
+  */
+
+  if (matches.length === 0) {
+
+    const from = date;
+
+    const to =
+      addDays(
+        date,
+        7
+      );
+
+    const range =
+      await apiRequest(
+        `/fixtures?from=${from}&to=${to}`
+      );
+
+    matches =
+      Array.isArray(
+        range.response
+      )
+        ? range.response
+        : [];
+  }
+
+
+  /*
+    3. Kama bado hakuna,
+       tumia next=20.
+  */
+
+  if (matches.length === 0) {
+
+    const next =
+      await apiRequest(
+        "/fixtures?next=20"
+      );
+
+    matches =
+      Array.isArray(
+        next.response
+      )
+        ? next.response
+        : [];
+  }
+
+
+  /*
+    Ondoa duplicates.
+  */
+
+  const unique =
+    new Map();
+
+  for (
+    const match of matches
+  ) {
+
+    const id =
+      match.fixture?.id;
+
+    if (id) {
+      unique.set(
+        id,
+        match
+      );
+    }
+  }
+
+
+  return Array.from(
+    unique.values()
+  );
+}
+
+
+/* =========================
+   HTTP SERVER
 ========================= */
 
 const server =
   http.createServer(
-    async (req, res) => {
+    async (
+      req,
+      res
+    ) => {
 
       try {
 
+        /* CORS */
+
         if (
-          req.method === "OPTIONS"
+          req.method ===
+          "OPTIONS"
         ) {
 
           res.writeHead(
             204,
             {
-              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Origin":
+                "*",
+
               "Access-Control-Allow-Headers":
-                "Content-Type"
+                "Content-Type",
+
+              "Access-Control-Allow-Methods":
+                "GET,POST,OPTIONS"
             }
           );
 
@@ -651,11 +896,14 @@ const server =
         }
 
 
-        /* HEALTH */
+        /* =====================
+           HEALTH
+        ===================== */
 
         if (
           req.method === "GET" &&
-          req.url === "/api/health"
+          req.url ===
+            "/api/health"
         ) {
 
           sendJSON(
@@ -663,8 +911,10 @@ const server =
             200,
             {
               ok: true,
+
               app:
                 "Fanuel Football Prediction",
+
               liveData:
                 Boolean(API_KEY)
             }
@@ -674,11 +924,14 @@ const server =
         }
 
 
-        /* PREDICTIONS */
+        /* =====================
+           PREDICTIONS
+        ===================== */
 
         if (
           req.method === "GET" &&
-          req.url === "/api/predictions"
+          req.url ===
+            "/api/predictions"
         ) {
 
           const database =
@@ -694,11 +947,14 @@ const server =
         }
 
 
-        /* PERFORMANCE */
+        /* =====================
+           PERFORMANCE
+        ===================== */
 
         if (
           req.method === "GET" &&
-          req.url === "/api/performance"
+          req.url ===
+            "/api/performance"
         ) {
 
           const database =
@@ -707,28 +963,34 @@ const server =
           const completed =
             database.predictions.filter(
               p =>
-                p.status === "correct" ||
-                p.status === "incorrect"
+                p.status ===
+                  "correct" ||
+                p.status ===
+                  "incorrect"
             );
 
           const correct =
             completed.filter(
               p =>
-                p.status === "correct"
+                p.status ===
+                "correct"
             ).length;
 
           const incorrect =
             completed.filter(
               p =>
-                p.status === "incorrect"
+                p.status ===
+                "incorrect"
             ).length;
 
           const accuracy =
             completed.length > 0
-              ? (correct /
-                  completed.length) *
-                100
+              ? (
+                  correct /
+                  completed.length
+                ) * 100
               : null;
+
 
           sendJSON(
             res,
@@ -748,7 +1010,9 @@ const server =
                 accuracy === null
                   ? null
                   : Number(
-                      accuracy.toFixed(1)
+                      accuracy.toFixed(
+                        1
+                      )
                     )
             }
           );
@@ -757,36 +1021,51 @@ const server =
         }
 
 
-        /* UPCOMING */
+        /* =====================
+           UPCOMING MATCHES
+        ===================== */
 
-if (
-  req.method === "GET" &&
-  req.url.startsWith("/api/upcoming")
-) {
-  const url = new URL(
-    req.url,
-    "http://localhost"
-  );
+        if (
+          req.method === "GET" &&
+          req.url.startsWith(
+            "/api/upcoming"
+          )
+        ) {
 
-  const date =
-    url.searchParams.get("date") ||
-    new Date().toISOString().slice(0, 10);
+          const url =
+            new URL(
+              req.url,
+              "http://localhost"
+            );
 
-  const data = await apiRequest(
-    `/fixtures?date=${date}`
-  );
-
-  sendJSON(
-    res,
-    200,
-    data.response || []
-  );
-
-  return;
-}
+          const requestedDate =
+            url.searchParams.get(
+              "date"
+            ) ||
+            formatDateLocal(
+              new Date()
+            );
 
 
-        /* ANALYZE FIXTURE */
+          const matches =
+            await getUpcomingMatches(
+              requestedDate
+            );
+
+
+          sendJSON(
+            res,
+            200,
+            matches
+          );
+
+          return;
+        }
+
+
+        /* =====================
+           ANALYZE FIXTURE
+        ===================== */
 
         if (
           req.method === "POST" &&
@@ -795,11 +1074,19 @@ if (
         ) {
 
           const body =
-            await readRequestBody(req);
+            await readRequestBody(
+              req
+            );
 
           let fixture =
             body.fixture;
 
+
+          /*
+            Kama frontend imetuma
+            fixtureId pekee,
+            ipate fixture API.
+          */
 
           if (
             !fixture &&
@@ -815,46 +1102,55 @@ if (
               data.response?.[0];
           }
 
-if (!fixture) {
-  throw new Error(
-    "Tuma fixture au fixtureId."
-  );
-}
 
-/*
-  Hakikisha tunatumia fixture kamili kutoka API-Football.
-  Frontend inaweza kuwa imetuma fixture yenye taarifa chache.
-*/
+          if (!fixture) {
+            throw new Error(
+              "Tuma fixture au fixtureId."
+            );
+          }
 
-const fixtureId =
-  fixture.fixture?.id ||
-  fixture.id ||
-  body.fixtureId;
 
-if (!fixtureId) {
-  throw new Error(
-    "Fixture ID haipo."
-  );
-}
+          const fixtureId =
+            fixture.fixture?.id ||
+            fixture.id ||
+            body.fixtureId;
 
-const fullFixtureData =
-  await apiRequest(
-    `/fixtures?id=${fixtureId}`
-  );
 
-const fullFixture =
-  fullFixtureData.response?.[0];
+          if (!fixtureId) {
+            throw new Error(
+              "Fixture ID haipo."
+            );
+          }
 
-if (!fullFixture) {
-  throw new Error(
-    "Fixture kamili haikupatikana kutoka API-Football."
-  );
-}
 
-const result =
-  await analyzeFixture(
-    fullFixture
-  );
+          /*
+            Pata fixture kamili
+            kutoka API-Football.
+          */
+
+          const fullFixtureData =
+            await apiRequest(
+              `/fixtures?id=${fixtureId}`
+            );
+
+
+          const fullFixture =
+            fullFixtureData
+              .response?.[0];
+
+
+          if (!fullFixture) {
+            throw new Error(
+              "Fixture kamili haikupatikana kutoka API-Football."
+            );
+          }
+
+
+          const result =
+            await analyzeFixture(
+              fullFixture
+            );
+
 
           sendJSON(
             res,
@@ -866,7 +1162,9 @@ const result =
         }
 
 
-        /* MANUAL PREDICTION */
+        /* =====================
+           MANUAL PREDICTION
+        ===================== */
 
         if (
           req.method === "POST" &&
@@ -875,7 +1173,9 @@ const result =
         ) {
 
           const body =
-            await readRequestBody(req);
+            await readRequestBody(
+              req
+            );
 
 
           const result =
@@ -895,7 +1195,9 @@ const result =
         }
 
 
-        /* RECORD RESULT */
+        /* =====================
+           RECORD RESULT
+        ===================== */
 
         if (
           req.method === "POST" &&
@@ -904,16 +1206,21 @@ const result =
         ) {
 
           const body =
-            await readRequestBody(req);
+            await readRequestBody(
+              req
+            );
 
           const database =
             readDB();
 
 
-          let prediction = null;
+          let prediction =
+            null;
 
 
-          if (body.predictionId) {
+          if (
+            body.predictionId
+          ) {
 
             prediction =
               database.predictions.find(
@@ -923,7 +1230,32 @@ const result =
                     body.predictionId
                   )
               );
+          }
 
+
+          const homeGoals =
+            Number(
+              body.homeGoals
+            );
+
+          const awayGoals =
+            Number(
+              body.awayGoals
+            );
+
+
+          if (
+            !Number.isFinite(
+              homeGoals
+            ) ||
+            !Number.isFinite(
+              awayGoals
+            )
+          ) {
+
+            throw new Error(
+              "homeGoals na awayGoals lazima ziwe namba."
+            );
           }
 
 
@@ -931,14 +1263,9 @@ const result =
 
             updatePredictionResult(
               prediction,
-              Number(
-                body.homeGoals
-              ),
-              Number(
-                body.awayGoals
-              )
+              homeGoals,
+              awayGoals
             );
-
           }
 
 
@@ -948,33 +1275,24 @@ const result =
               body.predictionId ||
               null,
 
-            homeGoals:
-              Number(
-                body.homeGoals
-              ),
+            homeGoals,
 
-            awayGoals:
-              Number(
-                body.awayGoals
-              ),
+            awayGoals,
 
             result:
               determineResult(
-                Number(
-                  body.homeGoals
-                ),
-                Number(
-                  body.awayGoals
-                )
+                homeGoals,
+                awayGoals
               ),
 
             recordedAt:
               new Date().toISOString()
-
           });
 
 
-          saveDB(database);
+          saveDB(
+            database
+          );
 
 
           sendJSON(
@@ -994,7 +1312,9 @@ const result =
         }
 
 
-        /* STATIC FILES */
+        /* =====================
+           STATIC FILES
+        ===================== */
 
         let requested =
           req.url.split("?")[0];
@@ -1008,10 +1328,19 @@ const result =
         }
 
 
+        const safePath =
+          path.normalize(
+            requested
+          ).replace(
+            /^(\.\.[/\\])+/,
+            ""
+          );
+
+
         const filePath =
           path.join(
             PUBLIC_DIR,
-            requested
+            safePath
           );
 
 
@@ -1055,8 +1384,22 @@ const result =
             "text/css; charset=utf-8",
 
           ".json":
-            "application/json; charset=utf-8"
+            "application/json; charset=utf-8",
 
+          ".png":
+            "image/png",
+
+          ".jpg":
+            "image/jpeg",
+
+          ".jpeg":
+            "image/jpeg",
+
+          ".svg":
+            "image/svg+xml",
+
+          ".ico":
+            "image/x-icon"
         };
 
 
@@ -1066,36 +1409,40 @@ const result =
           contentTypes[
             extension
           ] ||
-            "application/octet-stream"
+          "application/octet-stream"
         );
 
 
       } catch (error) {
 
-        console.error(error);
+        console.error(
+          "SERVER ERROR:",
+          error
+        );
 
         sendJSON(
           res,
           500,
           {
             error:
-              error.message
+              error.message ||
+              "Server error"
           }
         );
-
       }
-
     }
   );
 
 
+/* =========================
+   START SERVER
+========================= */
+
 server.listen(
   PORT,
   () => {
-
     console.log(
       `Fanuel Football Prediction running on port ${PORT}`
     );
-
   }
 );
