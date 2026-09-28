@@ -188,6 +188,14 @@
       margin-top: 0;
       color: #72bdff;
     }
+    .ai-badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#063d70;color:#8ed0ff;font-size:11px;font-weight:bold;margin-left:6px}
+    .ai-analysis{margin-top:12px;padding:12px;background:#071a30;border:1px solid #174d7c;border-radius:9px;line-height:1.55;color:#d7ebff}
+    .factor-list{margin:8px 0 0 18px;padding:0;color:#bdd8ef}
+    .risk{margin-top:10px;padding:9px;border-radius:7px;background:#241d0b;color:#ffd98a;font-size:13px}
+    .status-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
+    .status-card{background:#08182d;border:1px solid #17456f;border-radius:8px;padding:10px;font-size:13px}
+    .status-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:#6f8aa4}
+    .status-dot.ok{background:#39d98a}.status-dot.warn{background:#ffbf47}.status-dot.bad{background:#ff6b6b}
 
     .pick {
       font-size: 22px;
@@ -300,7 +308,8 @@
 
 <header>
   <h1>⚽ Fanuel Football Prediction</h1>
-  <p>AI-Assisted Football Analysis & Historical Data</p>
+  <p>AI Deep Analysis • Statistical Engine • Historical Performance</p>
+  <div id="systemStatus" style="margin-top:12px;font-size:13px;color:#c7e3ff;">Checking system status...</div>
 </header>
 
 <div class="container">
@@ -696,32 +705,15 @@
     index
   ) {
 
-    const fixture =
-      match.fixture || {};
-
-    const league =
-      match.league || {};
-
-    const teams =
-      match.teams || {};
-
-    const home =
-      teams.home || {};
-
-    const away =
-      teams.away || {};
-
-    const date =
-      fixture.date || "";
-
-    const time =
-      fixture.time || "";
-
-    const status =
-      fixture.status || "Scheduled";
-
-    const id =
-      fixture.id || "";
+    const fixture = match.fixture || match;
+    const league = match.league || {};
+    const teams = match.teams || {};
+    const home = teams.home || match.homeTeam || {};
+    const away = teams.away || match.awayTeam || {};
+    const date = fixture.date || fixture.starting_at || match.starting_at || "";
+    const time = fixture.time || (date ? new Date(date).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "");
+    const status = fixture.status?.short || fixture.status?.long || match.status || "Scheduled";
+    const id = fixture.id || match.id || "";
 
 
     return `
@@ -793,11 +785,8 @@
     match
   ) {
 
-    const fixture =
-      match.fixture || {};
-
-    const fixtureId =
-      fixture.id;
+    const fixture = match.fixture || match;
+    const fixtureId = fixture.id || match.id;
 
     const predictionBox =
       document.getElementById(
@@ -874,8 +863,8 @@
       );
 
       loadPredictionHistory();
-
       loadPerformance();
+      loadSystemStatus();
 
     } catch (error) {
 
@@ -923,7 +912,8 @@
       <div class="prediction">
 
         <h3>
-          🧠 AI Prediction
+          🧠 AI Deep Prediction
+          ${prediction.ai?.enabled ? '<span class="ai-badge">OPENAI ACTIVE</span>' : '<span class="ai-badge">STATISTICAL FALLBACK</span>'}
         </h3>
 
         <div class="pick">
@@ -1099,6 +1089,25 @@
         </div>
 
 
+        <div class="ai-analysis">
+          <b>AI Analysis</b><br>
+          ${escapeHTML(prediction.ai?.analysis || "No AI narrative was returned.")}
+          ${Array.isArray(prediction.ai?.factors) && prediction.ai.factors.length ? `
+            <div style="margin-top:10px;"><b>Key Factors</b></div>
+            <ul class="factor-list">
+              ${prediction.ai.factors.map(f => \`<li>${escapeHTML(f)}</li>\`).join("")}
+            </ul>
+          ` : ""}
+          <div class="risk"><b>Risk:</b> ${escapeHTML(prediction.ai?.risk || "Not specified")}</div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><b>Correct Score</b><br>${escapeHTML(prediction.ai?.correctScore || "N/A")}</div>
+          <div class="stat"><b>AI Confidence</b><br>${escapeHTML(prediction.ai?.confidence ?? prediction.confidence ?? 0)}%</div>
+          <div class="stat"><b>AI Model</b><br>${escapeHTML(prediction.ai?.model || prediction.model || "N/A")}</div>
+          <div class="stat"><b>Odds Input</b><br>${prediction.usesOdds === false ? "NO" : "YES"}</div>
+        </div>
+
         <div
           style="
             margin-top:12px;
@@ -1127,6 +1136,24 @@
       </div>
 
     `;
+  }
+
+
+  /* =========================
+     SYSTEM STATUS
+  ========================= */
+
+  async function loadSystemStatus() {
+    const box = document.getElementById("systemStatus");
+    try {
+      const response = await fetch("/api/health", {cache:"no-store"});
+      const data = await response.json();
+      const apiState = data.tokenConfigured ? '<span class="status-dot ok"></span>API key configured' : '<span class="status-dot bad"></span>API key missing';
+      const aiState = data.aiConfigured ? '<span class="status-dot ok"></span>AI configured' : '<span class="status-dot warn"></span>AI key not configured';
+      box.innerHTML = `<div class="status-grid"><div class="status-card">${apiState}</div><div class="status-card">${aiState}</div></div>`;
+    } catch (error) {
+      box.innerHTML = '<span class="status-dot bad"></span>Unable to read system status';
+    }
   }
 
 
@@ -1277,8 +1304,7 @@
       const data =
         await response.json();
 
-      const p =
-        data.performance || {};
+      const p = data.performance || data;
 
       performance.innerHTML = `
 
