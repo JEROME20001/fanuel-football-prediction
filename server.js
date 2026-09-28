@@ -1021,6 +1021,149 @@ function predict(
   };
 }
 
+
+/* =====================================================
+   OPENAI FOOTBALL AI
+===================================================== */
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
+
+async function runFootballAI(context) {
+  if (!OPENAI_API_KEY) {
+    return {
+      enabled: false,
+      model: null,
+      status: "OPENAI_API_KEY haijawekwa.",
+      analysis: "AI kubwa haijawezeshwa; statistical model imetumika.",
+      bestPick: context.statistical.pick,
+      confidence: context.statistical.confidence,
+      probabilities: context.statistical.probabilities,
+      over25: context.statistical.over25,
+      btts: context.statistical.btts,
+      correctScore: "N/A",
+      factors: [],
+      risk: "AI haijawezeshwa"
+    };
+  }
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      bestPick: { type: "string", enum: ["Home Win", "Draw", "Away Win", "No Strong Pick"] },
+      confidence: { type: "number", minimum: 0, maximum: 100 },
+      homeProbability: { type: "number", minimum: 0, maximum: 100 },
+      drawProbability: { type: "number", minimum: 0, maximum: 100 },
+      awayProbability: { type: "number", minimum: 0, maximum: 100 },
+      over25Probability: { type: "number", minimum: 0, maximum: 100 },
+      bttsProbability: { type: "number", minimum: 0, maximum: 100 },
+      correctScore: { type: "string" },
+      analysis: { type: "string" },
+      factors: {
+        type: "array",
+        items: { type: "string" },
+        minItems: 3,
+        maxItems: 6
+      },
+      risk: { type: "string" }
+    },
+    required: [
+      "bestPick",
+      "confidence",
+      "homeProbability",
+      "drawProbability",
+      "awayProbability",
+      "over25Probability",
+      "bttsProbability",
+      "correctScore",
+      "analysis",
+      "factors",
+      "risk"
+    ]
+  };
+
+  const input = [
+    {
+      role: "system",
+      content: `You are the Fanuel Football AI analysis engine.
+Analyze football fixtures using ONLY the supplied football data and statistical model output.
+Do not use bookmaker odds as an input. Do not invent injuries, news, form or facts that are not supplied.
+Treat prediction as probabilistic, never as certainty.
+Return a balanced analysis based on form, goals, home/away context and the statistical baseline.
+If evidence is weak or conflicting, use "No Strong Pick".
+Keep analysis concise and factual.`
+    },
+    {
+      role: "user",
+      content: JSON.stringify(context)
+    }
+  ];
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + OPENAI_API_KEY
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      reasoning: { effort: "high" },
+      input,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "fanuel_football_prediction",
+          strict: true,
+          schema
+        }
+      },
+      store: false
+    })
+  });
+
+  const raw = await response.text();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error("OpenAI ilirudisha response isiyo JSON. HTTP " + response.status);
+  }
+
+  if (!response.ok) {
+    const message =
+      data?.error?.message ||
+      ("OpenAI HTTP " + response.status);
+    throw new Error(message);
+  }
+
+  const outputText =
+    data.output_text ||
+    data.output?.flatMap(x => x.content || [])
+      .filter(x => x.type === "output_text")
+      .map(x => x.text)
+      .join("") ||
+    "";
+
+  if (!outputText) {
+    throw new Error("OpenAI haikurudisha AI analysis.");
+  }
+
+  let ai;
+  try {
+    ai = JSON.parse(outputText);
+  } catch {
+    throw new Error("AI output haikuwa JSON iliyotarajiwa.");
+  }
+
+  return {
+    enabled: true,
+    model: OPENAI_MODEL,
+    status: "AI analysis active",
+    ...ai
+  };
+}
+
 /* =====================================================
    ANALYZE FIXTURE
 ===================================================== */
@@ -1081,12 +1224,72 @@ async function analyze(
       awayHistory
     );
 
-  const result =
-    predict(
-      fixture,
+  const statistical = predict(
+    fixture,
+    homeForm,
+    awayForm
+  );
+
+  let ai;
+  try {
+    ai = await runFootballAI({
+      fixture: {
+        id: fixture.fixture?.id,
+        date: fixture.fixture?.date,
+        league: fixture.league,
+        home: fixture.teams.home,
+        away: fixture.teams.away
+      },
       homeForm,
-      awayForm
-    );
+      awayForm,
+      statistical
+    });
+  } catch (err) {
+    console.log("OpenAI analysis error:", err.message);
+    ai = {
+      enabled: false,
+      model: OPENAI_MODEL,
+      status: "AI unavailable; statistical fallback used",
+      error: err.message,
+      bestPick: statistical.pick,
+      confidence: statistical.confidence,
+      homeProbability: statistical.probabilities.home,
+      drawProbability: statistical.probabilities.draw,
+      awayProbability: statistical.probabilities.away,
+      over25Probability: statistical.over25,
+      bttsProbability: statistical.btts,
+      correctScore: "N/A",
+      analysis: "AI haikupatikana; statistical baseline imetumika.",
+      factors: [],
+      risk: "AI unavailable"
+    };
+  }
+
+  const result = {
+    ...statistical,
+    pick: ai.bestPick === "No Strong Pick" ? statistical.pick : ai.bestPick,
+    confidence: Math.round(Number(ai.confidence || statistical.confidence) * 10) / 10,
+    probabilities: {
+      home: Math.round(Number(ai.homeProbability ?? statistical.probabilities.home) * 10) / 10,
+      draw: Math.round(Number(ai.drawProbability ?? statistical.probabilities.draw) * 10) / 10,
+      away: Math.round(Number(ai.awayProbability ?? statistical.probabilities.away) * 10) / 10
+    },
+    over25: Math.round(Number(ai.over25Probability ?? statistical.over25) * 10) / 10,
+    btts: Math.round(Number(ai.bttsProbability ?? statistical.btts) * 10) / 10,
+    ai: {
+      enabled: Boolean(ai.enabled),
+      model: ai.model || OPENAI_MODEL,
+      status: ai.status || "",
+      bestPick: ai.bestPick || statistical.pick,
+      confidence: Number(ai.confidence ?? statistical.confidence),
+      correctScore: ai.correctScore || "N/A",
+      analysis: ai.analysis || "",
+      factors: Array.isArray(ai.factors) ? ai.factors : [],
+      risk: ai.risk || ""
+    },
+    model: ai.enabled ? "Fanuel AI + Statistical Engine" : "Fanuel Statistical AI (AI fallback)",
+    usesOdds: false
+  };
 
   db.predictions.push(
     result
@@ -1172,11 +1375,39 @@ async function api(
         tokenConfigured:
           Boolean(API_KEY),
 
+        aiConfigured:
+          Boolean(OPENAI_API_KEY),
+
+        aiModel:
+          OPENAI_MODEL,
+
         service:
           "Fanuel Football Prediction",
 
         serverTime:
           new Date().toISOString()
+      }
+    );
+  }
+
+  /* ---------------------------------
+     AI HEALTH
+  --------------------------------- */
+
+  if (
+    url.pathname ===
+    "/api/ai-health"
+  ) {
+    return sendJSON(
+      res,
+      200,
+      {
+        ok: true,
+        configured: Boolean(OPENAI_API_KEY),
+        model: OPENAI_MODEL,
+        message: OPENAI_API_KEY
+          ? "OpenAI football AI is configured."
+          : "OPENAI_API_KEY haijawekwa kwenye Render."
       }
     );
   }
