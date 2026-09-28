@@ -1567,6 +1567,42 @@ async function api(
   }
 
   /* ---------------------------------
+     AUTO SETTLE A FINISHED FIXTURE
+  --------------------------------- */
+
+  if (url.pathname === "/api/settle-fixture") {
+    if (req.method !== "POST") return sendJSON(res, 405, { ok:false, error:"POST required" });
+    let body = "";
+    req.on("data", chunk => { body += chunk.toString(); if (body.length > 10000) req.destroy(); });
+    req.on("end", async () => {
+      try {
+        const data = JSON.parse(body || "{}");
+        const fixtureId = String(data.fixtureId || "");
+        if (!fixtureId) return sendJSON(res, 400, { ok:false, error:"fixtureId required" });
+        cache.delete("fixture:" + fixtureId);
+        const fixture = await getFixture(fixtureId);
+        const status = fixture.fixture?.status?.short || "";
+        const homeScore = fixture.goals?.home;
+        const awayScore = fixture.goals?.away;
+        if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore)) {
+          return sendJSON(res, 409, { ok:false, settled:false, status, error:"Mchezo bado hauna score ya mwisho kutoka API-Football." });
+        }
+        const prediction = [...db.predictions].reverse().find(p => String(p.fixtureId) === fixtureId);
+        if (!prediction) return sendJSON(res, 404, { ok:false, error:"Prediction haijapatikana." });
+        let actualPick = "Draw";
+        if (homeScore > awayScore) actualPick = "Home Win";
+        if (homeScore < awayScore) actualPick = "Away Win";
+        const result = { fixtureId, homeScore, awayScore, actualPick, correct: prediction.pick === actualPick, settledAt:new Date().toISOString(), source:"API-Football" };
+        db.results = db.results.filter(r => String(r.fixtureId) !== fixtureId);
+        db.results.push(result);
+        saveDB(db);
+        return sendJSON(res, 200, { ok:true, settled:true, result });
+      } catch (err) { return sendJSON(res, 500, { ok:false, error:err.message }); }
+    });
+    return;
+  }
+
+  /* ---------------------------------
      UPCOMING FIXTURES
   --------------------------------- */
 
