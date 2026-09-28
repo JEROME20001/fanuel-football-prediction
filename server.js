@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const PORT = process.env.PORT || 3000;
+
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
@@ -14,9 +15,9 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-/* ================================
+/* =====================================================
    DATABASE
-================================ */
+===================================================== */
 
 function loadDB() {
   try {
@@ -27,10 +28,23 @@ function loadDB() {
       };
     }
 
-    return JSON.parse(
+    const data = JSON.parse(
       fs.readFileSync(DB_FILE, "utf8")
     );
-  } catch {
+
+    return {
+      predictions: Array.isArray(data.predictions)
+        ? data.predictions
+        : [],
+
+      results: Array.isArray(data.results)
+        ? data.results
+        : []
+    };
+
+  } catch (err) {
+    console.log("DB load error:", err.message);
+
     return {
       predictions: [],
       results: []
@@ -42,25 +56,31 @@ function saveDB(db) {
   try {
     fs.writeFileSync(
       DB_FILE,
-      JSON.stringify(db, null, 2)
+      JSON.stringify(db, null, 2),
+      "utf8"
     );
   } catch (err) {
-    console.log("DB save error:", err.message);
+    console.log(
+      "DB save error:",
+      err.message
+    );
   }
 }
 
 const db = loadDB();
 
-/* ================================
+/* =====================================================
    CACHE
-================================ */
+===================================================== */
 
 const cache = new Map();
 
 function cacheGet(key) {
   const item = cache.get(key);
 
-  if (!item) return null;
+  if (!item) {
+    return null;
+  }
 
   if (Date.now() > item.expires) {
     cache.delete(key);
@@ -73,78 +93,139 @@ function cacheGet(key) {
 function cacheSet(key, value, minutes) {
   cache.set(key, {
     value,
-    expires: Date.now() + minutes * 60 * 1000
+    expires:
+      Date.now() +
+      minutes * 60 * 1000
   });
 }
 
-/* ================================
+/* =====================================================
    API-FOOTBALL REQUEST
-================================ */
+===================================================== */
 
 async function apiRequest(endpoint) {
+
   if (!API_KEY) {
     throw new Error(
       "API_FOOTBALL_KEY haijawekwa kwenye Render."
     );
   }
 
-  const response = await fetch(
-    API_BASE + endpoint,
-    {
-      method: "GET",
-      headers: {
-        "x-apisports-key": API_KEY,
-        "Accept": "application/json"
-      }
-    }
+  const url =
+    API_BASE + endpoint;
+
+  console.log(
+    "API REQUEST:",
+    url
   );
 
-  const text = await response.text();
+  const response =
+    await fetch(
+      url,
+      {
+        method: "GET",
+
+        headers: {
+          "x-apisports-key":
+            API_KEY,
+
+          "Accept":
+            "application/json"
+        }
+      }
+    );
+
+  const text =
+    await response.text();
 
   let data;
 
   try {
-    data = JSON.parse(text);
-  } catch {
+    data =
+      JSON.parse(text);
+
+  } catch (err) {
+
     throw new Error(
       "API-Football ilirudisha response isiyo JSON. HTTP " +
       response.status
     );
   }
 
-  if (!response.ok) {
-    const message =
-      Array.isArray(data.errors)
-        ? data.errors.join(", ")
-        : data.message ||
-          "API-Football HTTP " +
-          response.status;
+  console.log(
+    "API HTTP STATUS:",
+    response.status
+  );
 
-    throw new Error(message);
+  console.log(
+    "API RESULTS:",
+    data.results
+  );
+
+  if (!response.ok) {
+
+    let message =
+      "API-Football HTTP " +
+      response.status;
+
+    if (
+      Array.isArray(data.errors)
+    ) {
+      message =
+        data.errors.join(", ");
+    }
+
+    if (
+      data.message
+    ) {
+      message =
+        data.message;
+    }
+
+    throw new Error(
+      message
+    );
   }
 
   if (
-    Array.isArray(data.errors) &&
-    data.errors.length > 0
+    data.errors &&
+    typeof data.errors === "object"
   ) {
-    throw new Error(
-      data.errors.join(", ")
-    );
+
+    const errors =
+      Array.isArray(data.errors)
+        ? data.errors.join(", ")
+        : JSON.stringify(data.errors);
+
+    if (errors !== "{}") {
+      throw new Error(
+        "API-Football: " +
+        errors
+      );
+    }
   }
 
   return data;
 }
 
-/* ================================
+/* =====================================================
    GET FIXTURES BY DATE
-================================ */
+===================================================== */
 
 async function getFixtures(date) {
-  const cacheKey = "fixtures:" + date;
 
-  const cached = cacheGet(cacheKey);
+  const cacheKey =
+    "fixtures:" + date;
+
+  const cached =
+    cacheGet(cacheKey);
 
   if (cached) {
+    console.log(
+      "CACHE:",
+      date
+    );
+
     return cached;
   }
 
@@ -153,87 +234,115 @@ async function getFixtures(date) {
     encodeURIComponent(date) +
     "&timezone=Africa%2FDar_es_Salaam";
 
+  console.log(
+    "GET FIXTURES:",
+    date
+  );
+
   const response =
-    await apiRequest(endpoint);
+    await apiRequest(
+      endpoint
+    );
 
   const fixtures =
-    Array.isArray(response.response)
+    Array.isArray(
+      response.response
+    )
       ? response.response
       : [];
 
   console.log(
-    "API-Football:",
-    date,
-    "fixtures:",
+    "FIXTURES RETURNED:",
     fixtures.length
   );
 
-  /*
-   * API inaweza kurudisha errors bila
-   * HTTP error.
-   */
   if (
-    Array.isArray(response.errors) &&
+    Array.isArray(
+      response.errors
+    ) &&
     response.errors.length > 0
   ) {
+
     throw new Error(
       "API-Football: " +
       response.errors.join(", ")
     );
   }
 
-  if (!fixtures.length) {
-    return {
-      ok: true,
-      provider: "API-Football",
-      date,
-      timezone:
-        "Africa/Dar_es_Salaam",
-      count: 0,
-      matches: [],
-      message:
-        "Hakuna mechi zilizorudishwa na API-Football kwa tarehe hii."
-    };
-  }
-
   const matches =
-    fixtures.map(formatFixture);
+    fixtures.map(
+      formatFixture
+    );
 
   const result = {
+
     ok: true,
-    provider: "API-Football",
+
+    provider:
+      "API-Football",
+
     date,
+
     timezone:
       "Africa/Dar_es_Salaam",
-    count: matches.length,
-    matches
+
+    count:
+      matches.length,
+
+    matches,
+
+    debug: {
+
+      apiResults:
+        response.results ??
+        null,
+
+      apiPaging:
+        response.paging ??
+        null,
+
+      apiErrors:
+        response.errors ||
+        []
+    },
+
+    message:
+      matches.length > 0
+        ? `${matches.length} matches found.`
+        : `API-Football returned 0 matches for ${date}.`
   };
 
   cacheSet(
     cacheKey,
     result,
-    5
+    2
   );
 
   return result;
 }
 
-/* ================================
+/* =====================================================
    FORMAT FIXTURE
-================================ */
+===================================================== */
 
 function formatFixture(fixture) {
+
   const f =
-    fixture.fixture || {};
+    fixture.fixture ||
+    {};
 
   const teams =
-    fixture.teams || {};
+    fixture.teams ||
+    {};
 
   const league =
-    fixture.league || {};
+    fixture.league ||
+    {};
 
   return {
-    id: f.id,
+
+    id:
+      f.id || null,
 
     name:
       `${teams.home?.name || "Home"} vs ` +
@@ -243,57 +352,73 @@ function formatFixture(fixture) {
       f.date || null,
 
     homeTeam: {
+
       id:
-        teams.home?.id || null,
+        teams.home?.id ||
+        null,
 
       name:
-        teams.home?.name || "Home Team",
+        teams.home?.name ||
+        "Home Team",
 
       logo:
-        teams.home?.logo || null
+        teams.home?.logo ||
+        null
     },
 
     awayTeam: {
+
       id:
-        teams.away?.id || null,
+        teams.away?.id ||
+        null,
 
       name:
-        teams.away?.name || "Away Team",
+        teams.away?.name ||
+        "Away Team",
 
       logo:
-        teams.away?.logo || null
+        teams.away?.logo ||
+        null
     },
 
     league: {
+
       id:
-        league.id || null,
+        league.id ||
+        null,
 
       name:
-        league.name || "Unknown League",
+        league.name ||
+        "Unknown League",
 
       country:
-        league.country || ""
+        league.country ||
+        ""
     },
 
     season:
-      league.season || null,
+      league.season ||
+      null,
 
     status:
-      f.status || null,
+      f.status ||
+      null,
 
     venue:
-      f.venue || null,
+      f.venue ||
+      null,
 
     raw:
       fixture
   };
 }
 
-/* ================================
+/* =====================================================
    GET FIXTURE
-================================ */
+===================================================== */
 
 async function getFixture(id) {
+
   const cacheKey =
     "fixture:" + id;
 
@@ -311,9 +436,12 @@ async function getFixture(id) {
     );
 
   if (
-    !Array.isArray(response.response) ||
+    !Array.isArray(
+      response.response
+    ) ||
     !response.response.length
   ) {
+
     throw new Error(
       "Fixture haijapatikana."
     );
@@ -331,17 +459,21 @@ async function getFixture(id) {
   return fixture;
 }
 
-/* ================================
+/* =====================================================
    TEAM LAST MATCHES
-================================ */
+===================================================== */
 
-async function getTeamHistory(teamId) {
+async function getTeamHistory(
+  teamId
+) {
+
   if (!teamId) {
     return [];
   }
 
   const cacheKey =
-    "team-last:" + teamId;
+    "team-last:" +
+    teamId;
 
   const cached =
     cacheGet(cacheKey);
@@ -358,7 +490,9 @@ async function getTeamHistory(teamId) {
     );
 
   const fixtures =
-    Array.isArray(response.response)
+    Array.isArray(
+      response.response
+    )
       ? response.response
       : [];
 
@@ -371,98 +505,120 @@ async function getTeamHistory(teamId) {
   return fixtures;
 }
 
-/* ================================
+/* =====================================================
    TEAM FORM
-================================ */
+===================================================== */
 
 function teamForm(
   teamId,
   fixtures
 ) {
+
   const games = [];
 
-  fixtures.forEach(fixture => {
-    const teams =
-      fixture.teams || {};
+  fixtures.forEach(
+    fixture => {
 
-    const home =
-      teams.home;
+      const teams =
+        fixture.teams ||
+        {};
 
-    const away =
-      teams.away;
+      const home =
+        teams.home;
 
-    const goals =
-      fixture.goals || {};
+      const away =
+        teams.away;
 
-    if (
-      !home ||
-      !away ||
-      goals.home === null ||
-      goals.away === null ||
-      goals.home === undefined ||
-      goals.away === undefined
-    ) {
-      return;
+      const goals =
+        fixture.goals ||
+        {};
+
+      if (
+        !home ||
+        !away ||
+        goals.home === null ||
+        goals.away === null ||
+        goals.home === undefined ||
+        goals.away === undefined
+      ) {
+        return;
+      }
+
+      const isHome =
+        String(home.id) ===
+        String(teamId);
+
+      const isAway =
+        String(away.id) ===
+        String(teamId);
+
+      if (
+        !isHome &&
+        !isAway
+      ) {
+        return;
+      }
+
+      const gf =
+        isHome
+          ? Number(goals.home)
+          : Number(goals.away);
+
+      const ga =
+        isHome
+          ? Number(goals.away)
+          : Number(goals.home);
+
+      if (
+        !Number.isFinite(gf) ||
+        !Number.isFinite(ga)
+      ) {
+        return;
+      }
+
+      let result =
+        "D";
+
+      if (gf > ga) {
+        result = "W";
+      }
+
+      if (gf < ga) {
+        result = "L";
+      }
+
+      games.push({
+
+        result,
+
+        gf,
+
+        ga
+      });
     }
-
-    const isHome =
-      String(home.id) ===
-      String(teamId);
-
-    const isAway =
-      String(away.id) ===
-      String(teamId);
-
-    if (!isHome && !isAway) {
-      return;
-    }
-
-    const gf =
-      isHome
-        ? Number(goals.home)
-        : Number(goals.away);
-
-    const ga =
-      isHome
-        ? Number(goals.away)
-        : Number(goals.home);
-
-    if (
-      !Number.isFinite(gf) ||
-      !Number.isFinite(ga)
-    ) {
-      return;
-    }
-
-    let result = "D";
-
-    if (gf > ga) {
-      result = "W";
-    }
-
-    if (gf < ga) {
-      result = "L";
-    }
-
-    games.push({
-      result,
-      gf,
-      ga
-    });
-  });
+  );
 
   const last =
     games.slice(0, 5);
 
   if (!last.length) {
+
     return {
+
       matches: 0,
+
       wins: 0,
+
       draws: 0,
+
       losses: 0,
+
       goalsFor: 1.35,
+
       goalsAgainst: 1.10,
+
       points: 0,
+
       form: "N/A"
     };
   }
@@ -470,117 +626,200 @@ function teamForm(
   let wins = 0;
   let draws = 0;
   let losses = 0;
+
   let goalsFor = 0;
   let goalsAgainst = 0;
 
-  last.forEach(game => {
-    goalsFor += game.gf;
-    goalsAgainst += game.ga;
+  last.forEach(
+    game => {
 
-    if (game.result === "W") wins++;
-    if (game.result === "D") draws++;
-    if (game.result === "L") losses++;
-  });
+      goalsFor +=
+        game.gf;
+
+      goalsAgainst +=
+        game.ga;
+
+      if (
+        game.result === "W"
+      ) {
+        wins++;
+      }
+
+      if (
+        game.result === "D"
+      ) {
+        draws++;
+      }
+
+      if (
+        game.result === "L"
+      ) {
+        losses++;
+      }
+    }
+  );
 
   return {
-    matches: last.length,
+
+    matches:
+      last.length,
+
     wins,
+
     draws,
+
     losses,
 
     goalsFor:
-      goalsFor / last.length,
+      goalsFor /
+      last.length,
 
     goalsAgainst:
-      goalsAgainst / last.length,
+      goalsAgainst /
+      last.length,
 
     points:
-      wins * 3 + draws,
+      wins * 3 +
+      draws,
 
     form:
       last
-        .map(x => x.result)
+        .map(
+          x => x.result
+        )
         .join("")
   };
 }
 
-/* ================================
+/* =====================================================
    POISSON
-================================ */
+===================================================== */
 
 function factorial(n) {
+
   let result = 1;
 
-  for (let i = 2; i <= n; i++) {
+  for (
+    let i = 2;
+    i <= n;
+    i++
+  ) {
     result *= i;
   }
 
   return result;
 }
 
-function poisson(lambda, goals) {
+function poisson(
+  lambda,
+  goals
+) {
+
   return (
     Math.exp(-lambda) *
-    Math.pow(lambda, goals) /
+    Math.pow(
+      lambda,
+      goals
+    ) /
     factorial(goals)
   );
 }
+
+/* =====================================================
+   PROBABILITIES
+===================================================== */
 
 function probabilities(
   homeLambda,
   awayLambda
 ) {
+
   let home = 0;
   let draw = 0;
   let away = 0;
+
   let over25 = 0;
   let btts = 0;
 
-  for (let h = 0; h <= 8; h++) {
-    for (let a = 0; a <= 8; a++) {
+  for (
+    let h = 0;
+    h <= 8;
+    h++
+  ) {
+
+    for (
+      let a = 0;
+      a <= 8;
+      a++
+    ) {
+
       const p =
-        poisson(homeLambda, h) *
-        poisson(awayLambda, a);
+        poisson(
+          homeLambda,
+          h
+        ) *
+        poisson(
+          awayLambda,
+          a
+        );
 
       if (h > a) {
         home += p;
-      } else if (h === a) {
+      }
+      else if (h === a) {
         draw += p;
-      } else {
+      }
+      else {
         away += p;
       }
 
-      if (h + a >= 3) {
+      if (
+        h + a >= 3
+      ) {
         over25 += p;
       }
 
-      if (h >= 1 && a >= 1) {
+      if (
+        h >= 1 &&
+        a >= 1
+      ) {
         btts += p;
       }
     }
   }
 
   const total =
-    home + draw + away;
+    home +
+    draw +
+    away;
 
   return {
-    home: home / total,
-    draw: draw / total,
-    away: away / total,
+
+    home:
+      home / total,
+
+    draw:
+      draw / total,
+
+    away:
+      away / total,
+
     over25,
+
     btts
   };
 }
 
-/* ================================
+/* =====================================================
    PREDICTION
-================================ */
+===================================================== */
 
 function predict(
   fixture,
   homeForm,
   awayForm
 ) {
+
   let homeLambda =
     (
       homeForm.goalsFor +
@@ -593,15 +832,12 @@ function predict(
       homeForm.goalsAgainst
     ) / 2;
 
-  /*
-    HOME ADVANTAGE
-  */
+  /* HOME ADVANTAGE */
 
-  homeLambda *= 1.08;
+  homeLambda *=
+    1.08;
 
-  /*
-    FORM ADJUSTMENT
-  */
+  /* FORM */
 
   const homeFormFactor =
     homeForm.points /
@@ -617,28 +853,42 @@ function predict(
       awayForm.matches * 3
     );
 
-  if (homeForm.matches > 0) {
+  if (
+    homeForm.matches > 0
+  ) {
+
     homeLambda *=
       0.90 +
-      homeFormFactor * 0.20;
+      homeFormFactor *
+      0.20;
   }
 
-  if (awayForm.matches > 0) {
+  if (
+    awayForm.matches > 0
+  ) {
+
     awayLambda *=
       0.90 +
-      awayFormFactor * 0.20;
+      awayFormFactor *
+      0.20;
   }
 
   homeLambda =
     Math.max(
       0.25,
-      Math.min(homeLambda, 4)
+      Math.min(
+        homeLambda,
+        4
+      )
     );
 
   awayLambda =
     Math.max(
       0.20,
-      Math.min(awayLambda, 4)
+      Math.min(
+        awayLambda,
+        4
+      )
     );
 
   const p =
@@ -662,20 +912,38 @@ function predict(
       p.away * 1000
     ) / 10;
 
-  let pick = "Draw";
-  let confidence = drawPct;
+  let pick =
+    "Draw";
 
-  if (homePct > confidence) {
-    pick = "Home Win";
-    confidence = homePct;
+  let confidence =
+    drawPct;
+
+  if (
+    homePct >
+    confidence
+  ) {
+
+    pick =
+      "Home Win";
+
+    confidence =
+      homePct;
   }
 
-  if (awayPct > confidence) {
-    pick = "Away Win";
-    confidence = awayPct;
+  if (
+    awayPct >
+    confidence
+  ) {
+
+    pick =
+      "Away Win";
+
+    confidence =
+      awayPct;
   }
 
   return {
+
     fixtureId:
       fixture.fixture.id,
 
@@ -694,9 +962,15 @@ function predict(
     confidence,
 
     probabilities: {
-      home: homePct,
-      draw: drawPct,
-      away: awayPct
+
+      home:
+        homePct,
+
+      draw:
+        drawPct,
+
+      away:
+        awayPct
     },
 
     doubleChance:
@@ -715,6 +989,7 @@ function predict(
       ) / 10,
 
     expectedGoals: {
+
       home:
         Math.round(
           homeLambda * 100
@@ -727,8 +1002,12 @@ function predict(
     },
 
     form: {
-      home: homeForm,
-      away: awayForm
+
+      home:
+        homeForm,
+
+      away:
+        awayForm
     },
 
     model:
@@ -742,16 +1021,22 @@ function predict(
   };
 }
 
-/* ================================
+/* =====================================================
    ANALYZE FIXTURE
-================================ */
+===================================================== */
 
-async function analyze(fixtureId) {
+async function analyze(
+  fixtureId
+) {
+
   const fixture =
-    await getFixture(fixtureId);
+    await getFixture(
+      fixtureId
+    );
 
   const teams =
-    fixture.teams || {};
+    fixture.teams ||
+    {};
 
   const home =
     teams.home;
@@ -759,7 +1044,11 @@ async function analyze(fixtureId) {
   const away =
     teams.away;
 
-  if (!home || !away) {
+  if (
+    !home ||
+    !away
+  ) {
+
     throw new Error(
       "API-Football haikurudisha home/away teams."
     );
@@ -768,10 +1057,17 @@ async function analyze(fixtureId) {
   const [
     homeHistory,
     awayHistory
-  ] = await Promise.all([
-    getTeamHistory(home.id),
-    getTeamHistory(away.id)
-  ]);
+  ] =
+    await Promise.all([
+
+      getTeamHistory(
+        home.id
+      ),
+
+      getTeamHistory(
+        away.id
+      )
+    ]);
 
   const homeForm =
     teamForm(
@@ -792,13 +1088,19 @@ async function analyze(fixtureId) {
       awayForm
     );
 
-  db.predictions.push(result);
+  db.predictions.push(
+    result
+  );
 
   if (
-    db.predictions.length > 500
+    db.predictions.length >
+    500
   ) {
+
     db.predictions =
-      db.predictions.slice(-500);
+      db.predictions.slice(
+        -500
+      );
   }
 
   saveDB(db);
@@ -806,51 +1108,64 @@ async function analyze(fixtureId) {
   return result;
 }
 
-/* ================================
-   JSON
-================================ */
+/* =====================================================
+   JSON RESPONSE
+===================================================== */
 
 function sendJSON(
   res,
   status,
   data
 ) {
+
   res.writeHead(
     status,
     {
+
       "Content-Type":
         "application/json; charset=utf-8",
 
       "Cache-Control":
-        "no-store"
+        "no-store",
+
+      "Access-Control-Allow-Origin":
+        "*"
     }
   );
 
   res.end(
-    JSON.stringify(data)
+    JSON.stringify(
+      data
+    )
   );
 }
 
-/* ================================
+/* =====================================================
    API ROUTES
-================================ */
+===================================================== */
 
 async function api(
   req,
   res,
   url
 ) {
-  /* HEALTH */
+
+  /* ---------------------------------
+     HEALTH
+  --------------------------------- */
 
   if (
     url.pathname ===
     "/api/health"
   ) {
+
     return sendJSON(
       res,
       200,
       {
+
         ok: true,
+
         provider:
           "API-Football",
 
@@ -858,31 +1173,47 @@ async function api(
           Boolean(API_KEY),
 
         service:
-          "Fanuel Football Prediction"
+          "Fanuel Football Prediction",
+
+        serverTime:
+          new Date().toISOString()
       }
     );
   }
 
-  /* UPCOMING */
+  /* ---------------------------------
+     UPCOMING FIXTURES
+  --------------------------------- */
 
   if (
     url.pathname ===
     "/api/upcoming"
   ) {
+
     const date =
-      url.searchParams.get("date") ||
+      url.searchParams.get(
+        "date"
+      ) ||
       new Date()
         .toISOString()
-        .slice(0, 10);
+        .slice(
+          0,
+          10
+        );
 
     if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(date)
+      !/^\d{4}-\d{2}-\d{2}$/.test(
+        date
+      )
     ) {
+
       return sendJSON(
         res,
         400,
         {
+
           ok: false,
+
           error:
             "Tumia date ya YYYY-MM-DD"
         }
@@ -890,15 +1221,20 @@ async function api(
     }
 
     try {
+
       const result =
-        await getFixtures(date);
+        await getFixtures(
+          date
+        );
 
       return sendJSON(
         res,
         200,
         result
       );
+
     } catch (err) {
+
       console.log(
         "Fixture error:",
         err.message
@@ -908,7 +1244,9 @@ async function api(
         res,
         500,
         {
+
           ok: false,
+
           error:
             err.message
         }
@@ -916,18 +1254,27 @@ async function api(
     }
   }
 
-  /* ANALYZE */
+  /* ---------------------------------
+     ANALYZE FIXTURE
+  --------------------------------- */
 
   if (
     url.pathname ===
     "/api/analyze-fixture"
   ) {
-    if (req.method !== "POST") {
+
+    if (
+      req.method !==
+      "POST"
+    ) {
+
       return sendJSON(
         res,
         405,
         {
+
           ok: false,
+
           error:
             "POST required"
         }
@@ -939,25 +1286,43 @@ async function api(
     req.on(
       "data",
       chunk => {
-        body += chunk;
+
+        body +=
+          chunk.toString();
+
+        if (
+          body.length >
+          1024 * 1024
+        ) {
+
+          req.destroy();
+        }
       }
     );
 
     req.on(
       "end",
       async () => {
+
         try {
+
           const data =
             JSON.parse(
-              body || "{}"
+              body ||
+              "{}"
             );
 
-          if (!data.fixtureId) {
+          if (
+            !data.fixtureId
+          ) {
+
             return sendJSON(
               res,
               400,
               {
+
                 ok: false,
+
                 error:
                   "fixtureId required"
               }
@@ -973,12 +1338,16 @@ async function api(
             res,
             200,
             {
+
               ok: true,
+
               prediction:
                 result
             }
           );
+
         } catch (err) {
+
           console.log(
             "Analysis error:",
             err.message
@@ -988,7 +1357,9 @@ async function api(
             res,
             500,
             {
+
               ok: false,
+
               error:
                 err.message
             }
@@ -1000,44 +1371,56 @@ async function api(
     return;
   }
 
-  /* PREDICTIONS */
+  /* ---------------------------------
+     PREDICTIONS
+  --------------------------------- */
 
   if (
     url.pathname ===
     "/api/predictions"
   ) {
+
     return sendJSON(
       res,
       200,
       {
+
         ok: true,
+
         predictions:
           db.predictions
       }
     );
   }
 
-  /* PERFORMANCE */
+  /* ---------------------------------
+     PERFORMANCE
+  --------------------------------- */
 
   if (
     url.pathname ===
     "/api/performance"
   ) {
+
     const results =
-      db.results || [];
+      db.results ||
+      [];
 
     const settled =
       results.length;
 
     const correct =
       results.filter(
-        x => x.correct === true
+        x =>
+          x.correct ===
+          true
       ).length;
 
     return sendJSON(
       res,
       200,
       {
+
         ok: true,
 
         totalPredictions:
@@ -1053,56 +1436,164 @@ async function api(
                 (
                   correct /
                   settled
-                ) * 1000
+                ) *
+                1000
               ) / 10
             : 0
       }
     );
   }
 
+  /* ---------------------------------
+     TEST API
+  --------------------------------- */
+
+  if (
+    url.pathname ===
+    "/api/test"
+  ) {
+
+    try {
+
+      if (!API_KEY) {
+
+        return sendJSON(
+          res,
+          200,
+          {
+
+            ok: false,
+
+            apiKey:
+              false,
+
+            message:
+              "API_FOOTBALL_KEY haijawekwa."
+          }
+        );
+      }
+
+      const response =
+        await apiRequest(
+          "/status"
+        );
+
+      return sendJSON(
+        res,
+        200,
+        {
+
+          ok: true,
+
+          apiKey:
+            true,
+
+          provider:
+            "API-Football",
+
+          response
+        }
+      );
+
+    } catch (err) {
+
+      return sendJSON(
+        res,
+        500,
+        {
+
+          ok: false,
+
+          apiKey:
+            Boolean(
+              API_KEY
+            ),
+
+          error:
+            err.message
+        }
+      );
+    }
+  }
+
   return sendJSON(
     res,
     404,
     {
+
       ok: false,
+
       error:
         "API route not found"
     }
   );
 }
 
-/* ================================
+/* =====================================================
    STATIC FILES
-================================ */
+===================================================== */
 
 function serveFile(
   req,
   res
 ) {
-  let file =
-    decodeURIComponent(
-      new URL(
-        req.url,
-        "http://localhost"
-      ).pathname
+
+  let file;
+
+  try {
+
+    file =
+      decodeURIComponent(
+        new URL(
+          req.url,
+          "http://localhost"
+        ).pathname
+      );
+
+  } catch (err) {
+
+    res.writeHead(
+      400
     );
 
-  if (file === "/") {
-    file = "/index.html";
+    return res.end(
+      "Bad Request"
+    );
+  }
+
+  if (
+    file === "/"
+  ) {
+
+    file =
+      "/index.html";
   }
 
   const filePath =
-    path.join(
+    path.resolve(
       PUBLIC_DIR,
+      "." +
       file
     );
 
-  if (
-    !filePath.startsWith(
+  const publicRoot =
+    path.resolve(
       PUBLIC_DIR
+    );
+
+  if (
+    filePath !==
+      publicRoot &&
+    !filePath.startsWith(
+      publicRoot +
+      path.sep
     )
   ) {
-    res.writeHead(403);
+
+    res.writeHead(
+      403
+    );
+
     return res.end(
       "Forbidden"
     );
@@ -1111,8 +1602,17 @@ function serveFile(
   fs.readFile(
     filePath,
     (err, data) => {
+
       if (err) {
-        res.writeHead(404);
+
+        res.writeHead(
+          404,
+          {
+            "Content-Type":
+              "text/plain; charset=utf-8"
+          }
+        );
+
         return res.end(
           "Not found"
         );
@@ -1124,6 +1624,7 @@ function serveFile(
         ).toLowerCase();
 
       const types = {
+
         ".html":
           "text/html; charset=utf-8",
 
@@ -1145,32 +1646,54 @@ function serveFile(
         ".jpeg":
           "image/jpeg",
 
+        ".gif":
+          "image/gif",
+
         ".svg":
-          "image/svg+xml"
+          "image/svg+xml",
+
+        ".ico":
+          "image/x-icon",
+
+        ".webp":
+          "image/webp"
       };
 
       res.writeHead(
         200,
         {
+
           "Content-Type":
             types[ext] ||
-            "application/octet-stream"
+            "application/octet-stream",
+
+          "Cache-Control":
+            ext === ".html"
+              ? "no-cache"
+              : "public, max-age=3600"
         }
       );
 
-      res.end(data);
+      res.end(
+        data
+      );
     }
   );
 }
 
-/* ================================
+/* =====================================================
    SERVER
-================================ */
+===================================================== */
 
 const server =
   http.createServer(
-    async (req, res) => {
+    async (
+      req,
+      res
+    ) => {
+
       try {
+
         const url =
           new URL(
             req.url,
@@ -1182,6 +1705,7 @@ const server =
             "/api/"
           )
         ) {
+
           await api(
             req,
             res,
@@ -1195,36 +1719,67 @@ const server =
           req,
           res
         );
+
       } catch (err) {
+
         console.log(
           "Server error:",
           err.message
         );
 
-        sendJSON(
-          res,
-          500,
-          {
-            ok: false,
-            error:
-              "Internal server error"
-          }
-        );
+        if (
+          !res.headersSent
+        ) {
+
+          sendJSON(
+            res,
+            500,
+            {
+
+              ok: false,
+
+              error:
+                "Internal server error"
+            }
+          );
+        }
       }
     }
   );
 
+/* =====================================================
+   START SERVER
+===================================================== */
+
 server.listen(
   PORT,
   () => {
+
     console.log(
-      "Fanuel Football Prediction running on port " +
+      "======================================"
+    );
+
+    console.log(
+      "Fanuel Football Prediction"
+    );
+
+    console.log(
+      "Server running on port:",
       PORT
     );
 
     console.log(
       "API-Football key configured:",
       Boolean(API_KEY)
+    );
+
+    console.log(
+      "API Base:",
+      API_BASE
+    );
+
+    console.log(
+      "======================================"
     );
   }
 );
