@@ -1413,6 +1413,160 @@ async function api(
   }
 
   /* ---------------------------------
+     AI DEMO / ENGINE TEST
+     This route does NOT call API-Football.
+     It is only for verifying the AI engine.
+  --------------------------------- */
+
+  if (url.pathname === "/api/ai-demo") {
+
+    try {
+      const demoStatistical = {
+        fixtureId: "demo-001",
+        match: "Demo United vs Demo City",
+        homeTeam: "Demo United",
+        awayTeam: "Demo City",
+        pick: "Home Win",
+        confidence: 55,
+        probabilities: { home: 55, draw: 25, away: 20 },
+        doubleChance: "1X",
+        over25: 58,
+        btts: 54,
+        expectedGoals: { home: 1.65, away: 1.05 },
+        model: "Fanuel Statistical AI",
+        usesOdds: false,
+        createdAt: new Date().toISOString()
+      };
+
+      const demo = await runFootballAI({
+        fixture: {
+          id: "demo-001",
+          date: new Date().toISOString(),
+          league: { name: "AI Engine Test", country: "Demo" },
+          home: { id: 1001, name: "Demo United" },
+          away: { id: 1002, name: "Demo City" }
+        },
+        homeForm: {
+          matches: 5, wins: 3, draws: 1, losses: 1,
+          goalsFor: 1.8, goalsAgainst: 0.9,
+          points: 10, form: "WWDLW"
+        },
+        awayForm: {
+          matches: 5, wins: 2, draws: 1, losses: 2,
+          goalsFor: 1.2, goalsAgainst: 1.4,
+          points: 7, form: "WLWDL"
+        },
+        statistical: demoStatistical
+      });
+
+      return sendJSON(res, 200, {
+        ok: true,
+        engine: "Fanuel Football AI",
+        provider: "OpenAI Responses API",
+        model: OPENAI_MODEL,
+        ai: demo
+      });
+
+    } catch (err) {
+      return sendJSON(res, 500, {
+        ok: false,
+        engine: "Fanuel Football AI",
+        model: OPENAI_MODEL,
+        error: err.message
+      });
+    }
+  }
+
+  /* ---------------------------------
+     SETTLE PREDICTION
+     Saves an actual result against a stored prediction.
+  --------------------------------- */
+
+  if (url.pathname === "/api/settle") {
+
+    if (req.method !== "POST") {
+      return sendJSON(res, 405, {
+        ok: false,
+        error: "POST required"
+      });
+    }
+
+    let body = "";
+
+    req.on("data", chunk => {
+      body += chunk.toString();
+      if (body.length > 10000) req.destroy();
+    });
+
+    req.on("end", () => {
+      try {
+        const data = JSON.parse(body || "{}");
+        const fixtureId = String(data.fixtureId || "");
+        const homeScore = Number(data.homeScore);
+        const awayScore = Number(data.awayScore);
+
+        if (
+          !fixtureId ||
+          !Number.isInteger(homeScore) ||
+          !Number.isInteger(awayScore) ||
+          homeScore < 0 ||
+          awayScore < 0
+        ) {
+          return sendJSON(res, 400, {
+            ok: false,
+            error: "fixtureId, homeScore and awayScore are required."
+          });
+        }
+
+        const prediction = [...db.predictions]
+          .reverse()
+          .find(p => String(p.fixtureId) === fixtureId);
+
+        if (!prediction) {
+          return sendJSON(res, 404, {
+            ok: false,
+            error: "Prediction haijapatikana."
+          });
+        }
+
+        let actualPick = "Draw";
+        if (homeScore > awayScore) actualPick = "Home Win";
+        if (homeScore < awayScore) actualPick = "Away Win";
+
+        const correct = prediction.pick === actualPick;
+
+        const result = {
+          fixtureId,
+          homeScore,
+          awayScore,
+          actualPick,
+          correct,
+          settledAt: new Date().toISOString()
+        };
+
+        db.results = db.results.filter(
+          r => String(r.fixtureId) !== fixtureId
+        );
+        db.results.push(result);
+        saveDB(db);
+
+        return sendJSON(res, 200, {
+          ok: true,
+          result
+        });
+
+      } catch (err) {
+        return sendJSON(res, 400, {
+          ok: false,
+          error: "Invalid JSON or settlement data."
+        });
+      }
+    });
+
+    return;
+  }
+
+  /* ---------------------------------
      UPCOMING FIXTURES
   --------------------------------- */
 
