@@ -1343,6 +1343,43 @@ function sendJSON(
   );
 }
 
+
+
+/* =====================================================
+   SPORTScore DATA PROVIDER TEST
+===================================================== */
+
+const SPORTSCORE_BASE = "https://sportscore.com";
+
+async function sportScoreRequest(path) {
+  const response = await fetch(SPORTSCORE_BASE + path, {
+    method: "GET",
+    headers: { "Accept": "application/json" }
+  });
+
+  const raw = await response.text();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error("SportScore ilirudisha response isiyo JSON. HTTP " + response.status);
+  }
+
+  if (!response.ok) {
+    throw new Error("SportScore HTTP " + response.status);
+  }
+
+  return data;
+}
+
+async function getSportScoreFixtures(date) {
+  const path =
+    "/api/v1/fixtures/?sport=football&date=" +
+    encodeURIComponent(date) +
+    "&limit=200";
+  return await sportScoreRequest(path);
+}
+
 /* =====================================================
    API ROUTES
 ===================================================== */
@@ -1352,6 +1389,44 @@ async function api(
   res,
   url
 ) {
+
+
+  /* ---------------------------------
+     SPORTScore PROVIDER TEST
+  --------------------------------- */
+  if (url.pathname === "/api/sportscore-test") {
+    const date = url.searchParams.get("date") ||
+      new Date().toISOString().slice(0, 10);
+
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) {
+      return sendJSON(res, 400, {
+        ok: false,
+        error: "Tumia date ya YYYY-MM-DD"
+      });
+    }
+
+    try {
+      const data = await getSportScoreFixtures(date);
+      const matches = Array.isArray(data.matches) ? data.matches : [];
+      return sendJSON(res, 200, {
+        ok: true,
+        provider: "SportScore",
+        date,
+        count: matches.length,
+        matches,
+        message: matches.length
+          ? "SportScore data inafanya kazi."
+          : "SportScore imerudisha 0 matches kwa tarehe hii."
+      });
+    } catch (err) {
+      return sendJSON(res, 502, {
+        ok: false,
+        provider: "SportScore",
+        date,
+        error: err.message
+      });
+    }
+  }
 
   /* ---------------------------------
      HEALTH
