@@ -333,12 +333,16 @@
         Load Matches
       </button>
 
+      <button type="button" onclick="runAIDemo()" style="background:#6b35d8">🧠 Test AI Engine</button>
+
     </div>
 
     <div
       id="status"
       class="status"
     ></div>
+
+    <div id="aiDemo" class="status" style="display:none"></div>
 
   </div>
 
@@ -394,6 +398,18 @@
 
     </div>
 
+  </div>
+
+
+  <!-- RESULT SETTLEMENT -->
+  <div class="panel">
+    <h2>✅ Update Match Result</h2>
+    <p style="color:#9fb6cc;font-size:13px;">Baada ya mchezo kumalizika, weka Fixture ID ili mfumo uchukue score ya mwisho na kupima prediction.</p>
+    <div class="controls">
+      <input id="settleFixtureId" type="number" min="1" placeholder="Fixture ID" style="background:#08182d;color:white;border:1px solid #2866a0;padding:12px;border-radius:8px;font-size:15px;flex:1;">
+      <button onclick="settleFixture()">Update Result</button>
+    </div>
+    <div id="settleStatus" class="status"></div>
   </div>
 
 
@@ -883,6 +899,52 @@
 
 
   /* =========================
+     AI ENGINE DEMO
+  ========================= */
+
+  async function runAIDemo() {
+    const box = document.getElementById("aiDemo");
+    box.style.display = "block";
+    box.className = "status";
+    box.innerHTML = '<span class="spinner"></span> AI engine is analyzing a test match...';
+    try {
+      const response = await fetch("/api/ai-demo", {cache:"no-store"});
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "AI demo failed");
+      const ai = data.ai || {};
+      box.className = "status success";
+      box.innerHTML = "<b>AI Engine OK</b><br>Model: " + escapeHTML(data.model || ai.model || "N/A") + "<br>Pick: <b>" + escapeHTML(ai.bestPick || "N/A") + "</b><br>Confidence: " + escapeHTML(ai.confidence ?? "N/A") + "%<br><small>" + escapeHTML(ai.analysis || "") + "</small>";
+    } catch (error) {
+      box.className = "status error";
+      box.innerHTML = "❌ AI Engine: " + escapeHTML(error.message);
+    }
+  }
+
+  /* =========================
+     AUTO SETTLEMENT
+  ========================= */
+
+  async function settleFixture(fixtureIdFromHistory) {
+    const input = document.getElementById("settleFixtureId");
+    const fixtureId = String(fixtureIdFromHistory || input?.value || "").trim();
+    const box = document.getElementById("settleStatus");
+    if (!fixtureId) {
+      box.style.display = "block"; box.className = "status error"; box.textContent = "Weka Fixture ID kwanza."; return;
+    }
+    box.style.display = "block"; box.className = "status"; box.innerHTML = '<span class="spinner"></span> Checking final score...';
+    try {
+      const response = await fetch("/api/settle-fixture", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fixtureId})});
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "Result update failed");
+      box.className = "status success"; box.innerHTML = "Score: <b>" + escapeHTML(data.result.homeScore) + " - " + escapeHTML(data.result.awayScore) + "</b> " + (data.result.correct ? "✅ Correct prediction" : "❌ Wrong prediction");
+      loadPredictionHistory(); loadPerformance();
+    } catch (error) {
+      box.className = "status error"; box.innerHTML = "❌ " + escapeHTML(error.message);
+    }
+  }
+
+
+  /* =========================
      DISPLAY PREDICTION
   ========================= */
 
@@ -1151,7 +1213,8 @@
       const apiState = data.tokenConfigured ? '<span class="status-dot ok"></span>API key configured' : '<span class="status-dot bad"></span>API key missing';
       const aiState = data.aiConfigured ? '<span class="status-dot ok"></span>AI configured' : '<span class="status-dot warn"></span>AI key not configured';
       box.innerHTML = `<div class="status-grid"><div class="status-card">${apiState}</div><div class="status-card">${aiState}</div></div>`;
-    } catch (error) {
+      const modelState = '<span class="status-dot ok"></span>Model: ' + escapeHTML(data.aiModel || "N/A");
+      box.innerHTML = '<div class="status-grid"><div class="status-card">' + apiState + '</div><div class="status-card">' + aiState + '</div><div class="status-card">' + modelState + '</div><div class="status-card"><span class="status-dot ok"></span>Odds input: NO</div></div>';    } catch (error) {
       box.innerHTML = '<span class="status-dot bad"></span>Unable to read system status';
     }
   }
