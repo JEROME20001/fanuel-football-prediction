@@ -139,24 +139,35 @@ function extractMatches(data) {
 }
 
 function normalizeSportScoreMatch(match) {
-  const home = match.home || match.home_team || match.teams?.home || {};
-  const away = match.away || match.away_team || match.teams?.away || {};
-  const competition = match.competition || match.league || {};
-  const id = String(match.slug || match.id || match.match_id || "");
+  // SportScore widget responses use simple strings for home/away
+  // (for example: { home: "Arsenal", away: "Chelsea" }).
+  // REST responses may instead use team objects, so support both shapes.
+  const homeRaw = match?.home || match?.home_team || match?.teams?.home || "";
+  const awayRaw = match?.away || match?.away_team || match?.teams?.away || "";
+  const home = typeof homeRaw === "string" ? { name: homeRaw } : (homeRaw || {});
+  const away = typeof awayRaw === "string" ? { name: awayRaw } : (awayRaw || {});
+  const competitionRaw = match?.competition || match?.league || {};
+  const competition = typeof competitionRaw === "string"
+    ? { name: competitionRaw }
+    : (competitionRaw || {});
+
+  const homeName = home.name || home.team_name || home.title || home.label || "Home Team";
+  const awayName = away.name || away.team_name || away.title || away.label || "Away Team";
+  const id = String(match?.slug || match?.id || match?.match_id || match?.fixture_id || "");
 
   return {
     id,
-    name: (home.name || home.team_name || "Home") + " vs " + (away.name || away.team_name || "Away"),
-    starting_at: match.time || match.starting_at || match.date || match.start || null,
+    name: homeName + " vs " + awayName,
+    starting_at: match?.time || match?.starting_at || match?.date || match?.start || null,
     homeTeam: {
-      id: home.id || home.team_id || home.slug || home.name || null,
-      name: home.name || home.team_name || "Home Team",
+      id: home.id || home.team_id || home.slug || home.team_slug || homeName,
+      name: homeName,
       logo: home.logo || home.logo_url || null,
       slug: home.slug || home.team_slug || null
     },
     awayTeam: {
-      id: away.id || away.team_id || away.slug || away.name || null,
-      name: away.name || away.team_name || "Away Team",
+      id: away.id || away.team_id || away.slug || away.team_slug || awayName,
+      name: awayName,
       logo: away.logo || away.logo_url || null,
       slug: away.slug || away.team_slug || null
     },
@@ -165,10 +176,10 @@ function normalizeSportScoreMatch(match) {
       name: competition.name || competition.competition_name || "Football",
       country: competition.country || ""
     },
-    season: match.season || competition.season || null,
-    status: match.status || match.status_text || "Scheduled",
-    venue: match.venue || null,
-    slug: match.slug || id,
+    season: match?.season || competition.season || null,
+    status: match?.status || match?.status_text || "Scheduled",
+    venue: match?.venue || null,
+    slug: match?.slug || id,
     raw: match
   };
 }
@@ -184,7 +195,21 @@ async function getFixtures(date) {
     "&limit=200"
   );
 
-  const matches = extractMatches(data).map(normalizeSportScoreMatch);
+  const rawMatches = extractMatches(data);
+  const seen = new Set();
+  const matches = rawMatches
+    .map(normalizeSportScoreMatch)
+    .filter(match => {
+      const key = String(
+        match.slug ||
+        match.id ||
+        (match.name + "|" + (match.starting_at || ""))
+      );
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return Boolean(match.homeTeam?.name && match.awayTeam?.name);
+    });
+
   const result = {
     ok: true,
     provider: "SportScore",
