@@ -1157,7 +1157,7 @@
           ${Array.isArray(prediction.ai?.factors) && prediction.ai.factors.length ? `
             <div style="margin-top:10px;"><b>Key Factors</b></div>
             <ul class="factor-list">
-              ${prediction.ai.factors.map(f => \`<li>${escapeHTML(f)}</li>\`).join("")}
+              ${prediction.ai.factors.map(f => "<li>" + escapeHTML(f) + "</li>").join("")}
             </ul>
           ` : ""}
           <div class="risk"><b>Risk:</b> ${escapeHTML(prediction.ai?.risk || "Not specified")}</div>
