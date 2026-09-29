@@ -729,7 +729,7 @@
     const date = fixture.date || fixture.starting_at || match.starting_at || "";
     const time = fixture.time || (date ? new Date(date).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "");
     const status = fixture.status?.short || fixture.status?.long || match.status || "Scheduled";
-    const id = fixture.id || match.id || "";
+    const id = fixture.id || match.id || match.slug || fixture.slug || "";
 
 
     return `
@@ -802,7 +802,7 @@
   ) {
 
     const fixture = match.fixture || match;
-    const fixtureId = fixture.id || match.id;
+    const fixtureId = fixture.id || match.id || match.slug || fixture.slug;
 
     const predictionBox =
       document.getElementById(
