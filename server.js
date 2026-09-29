@@ -1439,26 +1439,39 @@ async function api(
               "{}"
             );
 
-          if (
-            !data.fixtureId
-          ) {
+          // Accept either a normal SportScore fixture ID/slug
+          // or the complete match object sent by the automatic frontend.
+          let fixtureId = String(data.fixtureId || "").trim();
 
+          if (!fixtureId && data.match && typeof data.match === "object") {
+            const m = data.match;
+            fixtureId = String(
+              m.fixture?.id ||
+              m.fixture?.slug ||
+              m.id ||
+              m.slug ||
+              m.raw?.id ||
+              m.raw?.slug ||
+              m.raw?.match_id ||
+              m.raw?.fixture_id ||
+              ""
+            ).trim();
+          }
+
+          if (!fixtureId) {
             return sendJSON(
               res,
               400,
               {
-
                 ok: false,
-
-                error:
-                  "fixtureId required"
+                error: "SportScore match ID/slug haikupatikana."
               }
             );
           }
 
           const result =
             await analyze(
-              data.fixtureId
+              fixtureId
             );
 
           return sendJSON(
