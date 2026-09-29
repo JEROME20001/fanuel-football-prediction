@@ -802,7 +802,16 @@
   ) {
 
     const fixture = match.fixture || match;
-    const fixtureId = fixture.id || match.id || match.slug || fixture.slug;
+    const fixtureId =
+      fixture.id ||
+      fixture.slug ||
+      match.id ||
+      match.slug ||
+      match.raw?.id ||
+      match.raw?.slug ||
+      match.raw?.match_id ||
+      match.raw?.fixture_id ||
+      "";
 
     const predictionBox =
       document.getElementById(
