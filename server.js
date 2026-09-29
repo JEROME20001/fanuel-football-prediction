@@ -227,22 +227,53 @@ async function getFixtures(date) {
 }
 
 async function getFixture(id) {
-  const key = String(id || "");
+  const key = String(id || "").trim();
+  if (!key) throw new Error("SportScore fixture ID/slug haipo.");
+
   const cacheKey = "fixture:" + key;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
 
-  // The frontend sends the SportScore slug as the fixture id.
-  const data = await sportScoreRequest(
-    "/api/widget/match/?sport=football&slug=" + encodeURIComponent(key)
-  );
+  // Try the widget endpoint first, then the REST match endpoint.
+  let data;
+  let lastError = null;
 
-  const raw = data?.match || data?.data?.match || data?.data || data;
+  for (const endpoint of [
+    "/api/widget/match/?sport=football&slug=" + encodeURIComponent(key),
+    "/api/v1/match/?sport=football&slug=" + encodeURIComponent(key)
+  ]) {
+    try {
+      data = await sportScoreRequest(endpoint);
+      break;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!data) {
+    throw new Error(
+      "SportScore haikuweza kufungua mchezo huu: " +
+      (lastError?.message || "fixture not found")
+    );
+  }
+
+  const raw =
+    data?.match ||
+    data?.fixture ||
+    data?.data?.match ||
+    data?.data?.fixture ||
+    data?.data ||
+    data;
+
   if (!raw || typeof raw !== "object") {
     throw new Error("SportScore fixture haijapatikana.");
   }
 
   const fixture = normalizeSportScoreMatch(raw);
+  if (!fixture.homeTeam?.name || !fixture.awayTeam?.name) {
+    throw new Error("SportScore fixture haina majina ya timu.");
+  }
+
   fixture.raw = raw;
   cacheSet(cacheKey, fixture, 10);
   return fixture;
@@ -985,7 +1016,7 @@ async function api(
     }
 
     try {
-      const data = await getSportScoreFixtures(date);
+      const data = await getFixtures(date);
       const matches = Array.isArray(data.matches) ? data.matches : [];
       return sendJSON(res, 200, {
         ok: true,
