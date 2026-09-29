@@ -855,8 +855,38 @@ Keep analysis concise and factual.`
    ANALYZE FIXTURE
 ===================================================== */
 
-async function analyze(fixtureId) {
-  const fixture = await getFixture(fixtureId);
+async function analyze(fixtureId, suppliedMatch = null) {
+  // Automatic prediction can work directly from the fixture-list object.
+  // This avoids requiring a SportScore match ID/slug for every fixture.
+  let fixture;
+
+  if (suppliedMatch && typeof suppliedMatch === "object") {
+    const rawMatch = suppliedMatch.raw || suppliedMatch;
+    fixture = normalizeSportScoreMatch(rawMatch);
+
+    if (!fixture.id) {
+      fixture.id = String(
+        suppliedMatch.id ||
+        suppliedMatch.slug ||
+        rawMatch.id ||
+        rawMatch.slug ||
+        rawMatch.match_id ||
+        rawMatch.fixture_id ||
+        ("auto-" +
+          fixture.homeTeam.name +
+          "-vs-" +
+          fixture.awayTeam.name +
+          "-" +
+          (fixture.starting_at || ""))
+      );
+    }
+
+    fixture.slug = suppliedMatch.slug || rawMatch.slug || fixture.id;
+    fixture.raw = rawMatch;
+  } else {
+    fixture = await getFixture(fixtureId);
+  }
+
   const home = fixture.homeTeam || {};
   const away = fixture.awayTeam || {};
 
@@ -1458,20 +1488,23 @@ async function api(
             ).trim();
           }
 
-          if (!fixtureId) {
+          // For automatic prediction, the full fixture object is enough.
+          // Only require an ID when the client did not send the match itself.
+          if (!fixtureId && (!data.match || typeof data.match !== "object")) {
             return sendJSON(
               res,
               400,
               {
                 ok: false,
-                error: "SportScore match ID/slug haikupatikana."
+                error: "SportScore match data haikupatikana."
               }
             );
           }
 
           const result =
             await analyze(
-              fixtureId
+              fixtureId,
+              data.match || null
             );
 
           return sendJSON(
