@@ -280,25 +280,51 @@ async function getFixture(id) {
 }
 
 async function getTeamHistory(team) {
-  const slug = typeof team === "object"
-    ? (team.slug || team.id || team.name)
-    : team;
+  const obj = typeof team === "object" ? team : { name: String(team || "") };
+  const candidates = [obj.slug, obj.team_slug, obj.id, obj.team_id].filter(Boolean).map(String);
+  const name = obj.name || obj.team_name || obj.title || obj.label;
 
-  if (!slug) return [];
+  if (name) {
+    try {
+      const data = await sportScoreRequest("/api/v1/search/?q=" + encodeURIComponent(String(name)) + "&sport=football&limit=8");
+      const found = findTeamSearchResult(data, name);
+      if (found?.slug) candidates.push(String(found.slug));
+    } catch (err) {
+      console.log("Team search failed:", name, err.message);
+    }
+  }
 
-  const cacheKey = "team-last:" + slug;
-  const cached = cacheGet(cacheKey);
-  if (cached) return cached;
+  for (const slug of [...new Set(candidates)]) {
+    const cacheKey = "team-last:" + slug;
+    const cached = cacheGet(cacheKey);
+    if (cached) return cached;
+    try {
+      const data = await sportScoreRequest("/api/widget/team/?sport=football&slug=" + encodeURIComponent(slug) + "&limit=30");
+      const fixtures = extractMatches(data);
+      cacheSet(cacheKey, fixtures, 30);
+      return fixtures;
+    } catch (err) {
+      console.log("Team history failed:", name || slug, err.message);
+    }
+  }
+  return [];
+}
 
-  const data = await sportScoreRequest(
-    "/api/widget/team/?sport=football&slug=" +
-    encodeURIComponent(String(slug)) +
-    "&limit=30"
-  );
-
-  const fixtures = extractMatches(data);
-  cacheSet(cacheKey, fixtures, 30);
-  return fixtures;
+function findTeamSearchResult(data, wantedName) {
+  const wanted = String(wantedName || "").toLowerCase().trim();
+  const found = [];
+  function walk(v) {
+    if (!v || typeof v !== "object") return;
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    const name = v.name || v.team_name || v.title || v.label;
+    const slug = v.slug || v.team_slug || v.id || v.team_id;
+    if (name && slug) found.push({ name: String(name), slug: String(slug) });
+    Object.keys(v).forEach(k => { if (k !== "raw") walk(v[k]); });
+  }
+  walk(data);
+  return found.find(x => x.name.toLowerCase() === wanted) ||
+    found.find(x => x.name.toLowerCase().includes(wanted) || wanted.includes(x.name.toLowerCase())) ||
+    found[0] || null;
 }
 
 function fixtureForForm(raw) {
@@ -329,15 +355,20 @@ function fixtureForForm(raw) {
    TEAM FORM
 ===================================================== */
 
-function teamForm(teamId, fixtures) {
+function teamForm(teamRef, fixtures) {
   const games = [];
+  const ref = typeof teamRef === "object" ? teamRef : { id: teamRef, name: teamRef };
+  const wanted = new Set([ref.id, ref.slug, ref.team_id, ref.team_slug, ref.name, ref.team_name]
+    .filter(Boolean).map(x => String(x).trim().toLowerCase()));
 
   for (const raw of fixtures || []) {
     const g = fixtureForForm(raw);
     const home = g.home || {};
     const away = g.away || {};
-    const isHome = String(home.id || home.slug || home.name) === String(teamId);
-    const isAway = String(away.id || away.slug || away.name) === String(teamId);
+    const homeIds = [home.id, home.slug, home.name, home.team_id, home.team_slug].filter(Boolean).map(x => String(x).trim().toLowerCase());
+    const awayIds = [away.id, away.slug, away.name, away.team_id, away.team_slug].filter(Boolean).map(x => String(x).trim().toLowerCase());
+    const isHome = homeIds.some(x => wanted.has(x));
+    const isAway = awayIds.some(x => wanted.has(x));
 
     if (!isHome && !isAway) continue;
     if (!Number.isFinite(g.homeScore) || !Number.isFinite(g.awayScore)) continue;
@@ -895,12 +926,12 @@ async function analyze(fixtureId, suppliedMatch = null) {
   }
 
   const [homeHistory, awayHistory] = await Promise.all([
-    getTeamHistory(home.slug || home.id || home.name),
-    getTeamHistory(away.slug || away.id || away.name)
+    getTeamHistory(home),
+    getTeamHistory(away)
   ]);
 
-  const homeForm = teamForm(home.slug || home.id || home.name, homeHistory);
-  const awayForm = teamForm(away.slug || away.id || away.name, awayHistory);
+  const homeForm = teamForm(home, homeHistory);
+  const awayForm = teamForm(away, awayHistory);
 
   const statisticalFixture = {
     fixture: {
