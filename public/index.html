@@ -684,6 +684,9 @@
         }
       );
 
+      // Start prediction automatically as soon as matches are displayed.
+      autoAnalyzeMatches(matches);
+
     } catch (error) {
 
       console.error(error);
@@ -729,7 +732,7 @@
     const date = fixture.date || fixture.starting_at || match.starting_at || "";
     const time = fixture.time || (date ? new Date(date).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "");
     const status = fixture.status?.short || fixture.status?.long || match.status || "Scheduled";
-    const id = fixture.id || match.id || match.slug || fixture.slug || "";
+    const id = fixture.id || fixture.slug || match.id || match.slug || match.raw?.id || match.raw?.slug || match.raw?.match_id || match.raw?.fixture_id || ("auto-" + index);
 
 
     return `
@@ -776,15 +779,11 @@
           </div>
 
         </div>
+        <div class="prediction" style="margin-top:15px;">
+          <span class="spinner"></span> Automatic prediction is starting...
+        </div>
 
-        <button
-          class="analyze-btn"
-          onclick='analyzeMatch(${JSON.stringify(match).replace(/</g, "\\u003c")})'
-        >
-          🧠 Analyze Match
-        </button>
-
-        <div
+<div
           id="prediction-${escapeHTML(id)}"
         ></div>
 
@@ -794,12 +793,10 @@
 
 
   /* =========================
-     ANALYZE MATCH
+     AUTOMATIC MATCH ANALYSIS
   ========================= */
 
-  async function analyzeMatch(
-    match
-  ) {
+  async function analyzeMatch(match, index) {
 
     const fixture = match.fixture || match;
     const fixtureId =
@@ -811,101 +808,74 @@
       match.raw?.slug ||
       match.raw?.match_id ||
       match.raw?.fixture_id ||
-      "";
+      ("auto-" + index);
 
     const predictionBox =
       document.getElementById(
         `prediction-${fixtureId}`
       );
 
-    if (!predictionBox) {
-      return;
-    }
+    if (!predictionBox) return;
 
     predictionBox.innerHTML = `
       <div class="prediction">
         <span class="spinner"></span>
-        AI is analyzing this match...
+        🧠 Automatic analysis in progress...
         <br><br>
-        Checking historical data,
-        team form and statistical patterns.
+        Historical form, goals and statistical patterns are being checked.
       </div>
     `;
 
     try {
+      const response = await fetch("/api/analyze-fixture", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          fixtureId: fixtureId.startsWith("auto-") ? "" : fixtureId,
+          match: match
+        })
+      });
 
-      const response =
-        await fetch(
-          "/api/analyze-fixture",
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json"
-            },
-
-            body: JSON.stringify({
-              fixtureId:
-                fixtureId
-            })
-          }
-        );
-
-      const text =
-        await response.text();
-
+      const text = await response.text();
       let data;
-
       try {
         data = JSON.parse(text);
       } catch {
-        throw new Error(
-          "Invalid response from server."
-        );
+        throw new Error("Invalid response from server.");
       }
 
       if (!response.ok) {
-
-        throw new Error(
-          data.error ||
-          `Analysis failed (${response.status})`
-        );
+        throw new Error(data.error || `Analysis failed (${response.status})`);
       }
 
-      if (
-        !data.prediction
-      ) {
-
-        throw new Error(
-          "No prediction was returned."
-        );
+      if (!data.prediction) {
+        throw new Error("No prediction was returned.");
       }
 
-      displayPrediction(
-        predictionBox,
-        data.prediction
-      );
-
+      displayPrediction(predictionBox, data.prediction);
       loadPredictionHistory();
       loadPerformance();
-      loadSystemStatus();
 
     } catch (error) {
-
-      console.error(error);
-
+      console.error("Automatic analysis error:", error);
       predictionBox.innerHTML = `
         <div class="prediction">
-          ❌ Analysis failed:
-          ${escapeHTML(
-            error.message
-          )}
+          ❌ Automatic prediction failed:
+          ${escapeHTML(error.message)}
         </div>
       `;
     }
   }
 
+  async function autoAnalyzeMatches(matches) {
+    // Run one at a time to avoid overwhelming SportScore.
+    for (let i = 0; i < matches.length; i++) {
+      await analyzeMatch(matches[i], i);
+    }
+    loadSystemStatus();
+    loadPredictionHistory();
+    loadPerformance();
+  }
 
   /* =========================
      AI ENGINE DEMO
