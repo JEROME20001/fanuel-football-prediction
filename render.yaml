@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: fanuel-football-prediction
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeployTrigger: commit
+    envVars:
+      - key: API_FOOTBALL_KEY
+        sync: false
