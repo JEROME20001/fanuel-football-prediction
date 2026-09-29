@@ -406,7 +406,7 @@
     <h2>✅ Update Match Result</h2>
     <p style="color:#9fb6cc;font-size:13px;">Baada ya mchezo kumalizika, weka Fixture ID ili mfumo uchukue score ya mwisho na kupima prediction.</p>
     <div class="controls">
-      <input id="settleFixtureId" type="number" min="1" placeholder="Fixture ID" style="background:#08182d;color:white;border:1px solid #2866a0;padding:12px;border-radius:8px;font-size:15px;flex:1;">
+      <input id="settleFixtureId" type="text" placeholder="SportScore Match Slug / ID" style="background:#08182d;color:white;border:1px solid #2866a0;padding:12px;border-radius:8px;font-size:15px;flex:1;">
       <button onclick="settleFixture()">Update Result</button>
     </div>
     <div id="settleStatus" class="status"></div>
@@ -1210,7 +1210,7 @@
     try {
       const response = await fetch("/api/health", {cache:"no-store"});
       const data = await response.json();
-      const apiState = data.tokenConfigured ? '<span class="status-dot ok"></span>API key configured' : '<span class="status-dot bad"></span>API key missing';
+      const apiState = data.tokenConfigured ? '<span class="status-dot ok"></span>SportScore connected' : '<span class="status-dot bad"></span>SportScore unavailable';
       const aiState = data.aiConfigured ? '<span class="status-dot ok"></span>AI configured' : '<span class="status-dot warn"></span>AI key not configured';
       box.innerHTML = `<div class="status-grid"><div class="status-card">${apiState}</div><div class="status-card">${aiState}</div></div>`;
       const modelState = '<span class="status-dot ok"></span>Model: ' + escapeHTML(data.aiModel || "N/A");
