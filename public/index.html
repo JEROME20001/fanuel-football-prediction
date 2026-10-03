@@ -1063,11 +1063,18 @@
           </div>
 
           <div class="stat">
+            <b>Over 1.5</b><br>
+            ${escapeHTML(prediction.over15 ?? 0)}%
+          </div>
+
+          <div class="stat">
             <b>Over 2.5</b><br>
-            ${escapeHTML(
-              prediction.over25 ??
-              0
-            )}%
+            ${escapeHTML(prediction.over25 ?? 0)}%
+          </div>
+
+          <div class="stat">
+            <b>Over 3.5</b><br>
+            ${escapeHTML(prediction.over35 ?? 0)}%
           </div>
 
           <div class="stat">
@@ -1190,6 +1197,16 @@
           <div class="stat"><b>Statistical Weight</b><br>${escapeHTML(ensemble.statisticalWeight ?? "N/A")}%</div>
           <div class="stat"><b>AI Weight</b><br>${escapeHTML(ensemble.aiWeight ?? "N/A")}%</div>
           <div class="stat"><b>Model Gap</b><br>${escapeHTML(ensemble.modelGap ?? "N/A")}%</div>
+          <div class="stat"><b>Stability</b><br>${escapeHTML(ensemble.stability ?? "N/A")}</div>
+          <div class="stat"><b>Strength Gap</b><br>${escapeHTML(prediction.strength?.gap ?? "N/A")}</div>
+        </div>
+
+        <div class="stats">
+          <div class="stat" style="grid-column:1/-1"><b>Top Correct Scores</b><br>
+            ${(Array.isArray(prediction.topScores) && prediction.topScores.length)
+              ? prediction.topScores.map(x => escapeHTML(x.score) + " (" + escapeHTML(x.probability) + "%)").join(" • ")
+              : "N/A"}
+          </div>
         </div>
 
         <div class="stats">
@@ -1420,6 +1437,15 @@
             )}
           </div>
 
+        <div class="ai-analysis" style="margin-top:12px;">
+          <b>Calibration</b><br>
+          50–59%: ${escapeHTML(p.calibration?.["50-59"]?.accuracy ?? "N/A")}% •
+          60–69%: ${escapeHTML(p.calibration?.["60-69"]?.accuracy ?? "N/A")}% •
+          70–79%: ${escapeHTML(p.calibration?.["70-79"]?.accuracy ?? "N/A")}% •
+          80%+: ${escapeHTML(p.calibration?.["80+"]?.accuracy ?? "N/A")}%
+          <br><small>${escapeHTML(p.note || "")}</small>
+        </div>
+
           <div class="stat">
             <b>Completed</b><br>
             ${escapeHTML(
@@ -1439,11 +1465,10 @@
 
           <div class="stat">
             <b>Accuracy</b><br>
-            ${escapeHTML(
-              p.accuracy ??
-              0
-            )}%
+            ${escapeHTML(p.accuracy ?? 0)}%
           </div>
+          <div class="stat"><b>Brier Score</b><br>${escapeHTML(p.brierScore ?? "N/A")}</div>
+          <div class="stat"><b>Log Loss</b><br>${escapeHTML(p.logLoss ?? "N/A")}</div>
 
         </div>
 
