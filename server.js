@@ -1425,7 +1425,7 @@ async function api(
       url.searchParams.get("date") ||
       new Date().toISOString().slice(0, 10);
 
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(requestedDate)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
       return sendJSON(res, 400, {
         ok: false,
         error: "Tumia date ya YYYY-MM-DD"
