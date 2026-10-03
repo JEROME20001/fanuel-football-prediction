@@ -456,6 +456,37 @@ function teamForm(teamRef, fixtures) {
 }
 
 /* =====================================================
+   DATA QUALITY
+===================================================== */
+
+function dataQuality(homeForm, awayForm) {
+  const homeGames = Number(homeForm?.games || homeForm?.matches || 0);
+  const awayGames = Number(awayForm?.games || awayForm?.matches || 0);
+  const minimum = Math.min(homeGames, awayGames);
+  const average = (homeGames + awayGames) / 2;
+
+  let level = "low";
+  let score = 25;
+  let reason = "Recent form data is missing or very limited.";
+
+  if (minimum >= 5) {
+    level = "high";
+    score = 100;
+    reason = "Both teams have 5 recent matches with usable results.";
+  } else if (minimum >= 3) {
+    level = "medium";
+    score = 70;
+    reason = "Both teams have some recent form data, but the sample is incomplete.";
+  } else if (average >= 2) {
+    level = "medium";
+    score = 50;
+    reason = "Some recent form is available, but one or both teams have limited data.";
+  }
+
+  return { level, score, reason, homeGames, awayGames };
+}
+
+/* =====================================================
    POISSON
 ===================================================== */
 
@@ -706,7 +737,7 @@ function predict(
       awayPct;
   }
 
-  return {
+  const quality = dataQuality(homeForm, awayForm);\n\n  return {\n    dataQuality: quality,
 
     fixtureId:
       fixture.fixture.id,
@@ -810,6 +841,14 @@ async function runFootballAI(context) {
       risk: "AI haijawezeshwa"
     };
   }
+
+  const quality = context.statistical.dataQuality || dataQuality(context.homeForm, context.awayForm);
+  const dataWarning =
+    quality.level === "low"
+      ? "DATA QUALITY LOW: recent form is missing or very limited. Do not invent form, statistics, injuries, odds, or results. Treat uncertainty as high."
+      : quality.level === "medium"
+        ? "DATA QUALITY MEDIUM: recent form is incomplete. Do not invent missing information; reflect uncertainty."
+        : "DATA QUALITY HIGH: both teams have a usable recent-form sample.";
 
   const schema = {
     type: "object",
