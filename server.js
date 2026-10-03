@@ -671,6 +671,16 @@ function predict(fixture,homeForm,awayForm){
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
+const MAX_AI_DAILY = Math.max(1, Number(process.env.MAX_AI_DAILY || 150));
+
+function aiUsageToday() {
+  const today = new Date().toISOString().slice(0,10);
+  const used = db.predictions.filter(p =>
+    String(p.createdAt || "").slice(0,10) === today &&
+    String(p.model || "").includes("Deep Ensemble")
+  ).length;
+  return { date: today, used, limit: MAX_AI_DAILY, remaining: Math.max(0, MAX_AI_DAILY-used) };
+}
 
 async function runFootballAI(context) {
   if (!OPENAI_API_KEY) {
@@ -751,6 +761,27 @@ Keep analysis concise and factual.`
       content: JSON.stringify(context)
     }
   ];
+
+  const usage = aiUsageToday();
+  if (usage.used >= usage.limit) {
+    return {
+      enabled: false,
+      model: OPENAI_MODEL,
+      status: "AI daily budget reached",
+      analysis: "Daily AI limit reached; statistical engine used to protect API credits.",
+      bestPick: context.statistical.pick,
+      confidence: Math.min(context.statistical.confidence || 50, 60),
+      probabilities: context.statistical.probabilities,
+      over25: context.statistical.over25,
+      btts: context.statistical.btts,
+      correctScore: context.statistical.topScores?.[0]?.score || "N/A",
+      factors: ["AI daily budget reached", "Statistical model retained", "Credits protected"],
+      risk: "AI budget limit",
+      dataQuality: context.statistical.dataQuality,
+      ensemble: { agreement:100, modelGap:0 },
+      aiUsage: usage
+    };
+  }
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -1052,6 +1083,84 @@ function logLossScore(actual, p) {
   const v = actual === "Home Win" ? Number(p.home||0)/100 : actual === "Draw" ? Number(p.draw||0)/100 : Number(p.away||0)/100;
   return -Math.log(Math.max(0.0001, Math.min(0.9999, v)));
 }
+
+function actualPickFromScore(homeScore, awayScore) {
+  if (homeScore > awayScore) return "Home Win";
+  if (homeScore < awayScore) return "Away Win";
+  return "Draw";
+}
+
+function settlementMetrics(prediction, homeScore, awayScore) {
+  const actualPick = actualPickFromScore(homeScore, awayScore);
+  const total = homeScore + awayScore;
+  const actualOver25 = total >= 3;
+  const actualBTTS = homeScore >= 1 && awayScore >= 1;
+  const predictedScore = String(prediction?.ai?.correctScore || prediction?.correctScore || prediction?.topScores?.[0]?.score || "");
+  const actualScore = homeScore + "-" + awayScore;
+  return {
+    actualPick,
+    actualOver25,
+    actualBTTS,
+    actualScore,
+    correct: prediction?.pick === actualPick,
+    over25Correct: Number(prediction?.over25 || 0) >= 50 ? actualOver25 : !actualOver25,
+    bttsCorrect: Number(prediction?.btts || 0) >= 50 ? actualBTTS : !actualBTTS,
+    correctScore: predictedScore === actualScore
+  };
+}
+
+function findPrediction(fixtureId) {
+  return [...db.predictions].reverse().find(p => String(p.fixtureId) === String(fixtureId));
+}
+
+function saveSettlement(prediction, fixtureId, homeScore, awayScore, source="SportScore") {
+  const metrics = settlementMetrics(prediction, homeScore, awayScore);
+  const result = {
+    fixtureId: String(fixtureId),
+    homeScore,
+    awayScore,
+    ...metrics,
+    confidence: Number(prediction?.confidence || 0),
+    predictedPick: prediction?.pick || "",
+    predictedProbabilities: prediction?.probabilities || {},
+    predictedOver25: Number(prediction?.over25 || 0),
+    predictedBTTS: Number(prediction?.btts || 0),
+    settledAt: new Date().toISOString(),
+    source
+  };
+  db.results = db.results.filter(r => String(r.fixtureId) !== String(fixtureId));
+  db.results.push(result);
+  saveDB(db);
+  return result;
+}
+
+function settlementRows() {
+  return (db.results || []).map(result => {
+    const prediction = findPrediction(result.fixtureId);
+    return prediction ? { prediction, result } : null;
+  }).filter(Boolean);
+}
+
+function calibrationBuckets(rows) {
+  const buckets = {
+    "50-59": {count:0, correct:0, avgConfidence:0},
+    "60-69": {count:0, correct:0, avgConfidence:0},
+    "70-79": {count:0, correct:0, avgConfidence:0},
+    "80+": {count:0, correct:0, avgConfidence:0}
+  };
+  for (const row of rows) {
+    const c=Math.max(0,Math.min(100,Number(row.prediction.confidence||0)));
+    const key=c>=80?"80+":c>=70?"70-79":c>=60?"60-69":"50-59";
+    buckets[key].count++;
+    buckets[key].correct += row.result.correct ? 1 : 0;
+    buckets[key].avgConfidence += c;
+  }
+  for (const b of Object.values(buckets)) {
+    b.accuracy=b.count?Math.round(b.correct/b.count*1000)/10:null;
+    b.avgConfidence=b.count?Math.round(b.avgConfidence/b.count*10)/10:null;
+  }
+  return buckets;
+}
 /* =====================================================
    API ROUTES
 ===================================================== */
@@ -1282,20 +1391,7 @@ async function api(
 
         const correct = prediction.pick === actualPick;
 
-        const result = {
-          fixtureId,
-          homeScore,
-          awayScore,
-          actualPick,
-          correct,
-          settledAt: new Date().toISOString()
-        };
-
-        db.results = db.results.filter(
-          r => String(r.fixtureId) !== fixtureId
-        );
-        db.results.push(result);
-        saveDB(db);
+        const result = saveSettlement(prediction, fixtureId, homeScore, awayScore, "manual");
 
         return sendJSON(res, 200, {
           ok: true,
@@ -1352,22 +1448,42 @@ async function api(
         if (homeScore > awayScore) actualPick = "Home Win";
         if (homeScore < awayScore) actualPick = "Away Win";
 
-        const result = {
-          fixtureId, homeScore, awayScore, actualPick,
-          correct: prediction.pick === actualPick,
-          settledAt: new Date().toISOString(),
-          source: "SportScore"
-        };
-
-        db.results = db.results.filter(r => String(r.fixtureId) !== fixtureId);
-        db.results.push(result);
-        saveDB(db);
+        const result = saveSettlement(prediction, fixtureId, homeScore, awayScore, "SportScore");
         return sendJSON(res, 200, { ok:true, settled:true, result });
       } catch (err) {
         return sendJSON(res, 500, { ok:false, error:err.message });
       }
     });
     return;
+  }
+
+  /* ---------------------------------
+     AUTO SETTLE PENDING PREDICTIONS
+  --------------------------------- */
+  if (url.pathname === "/api/settle-pending") {
+    if (req.method !== "POST" && req.method !== "GET") return sendJSON(res,405,{ok:false,error:"GET or POST required"});
+    const cutoff=Date.now()-2*60*60*1000;
+    const pending=[...db.predictions]
+      .filter(p=>p.createdAt && new Date(p.createdAt).getTime() < cutoff)
+      .filter(p=>!db.results.some(r=>String(r.fixtureId)===String(p.fixtureId)))
+      .slice(-50);
+    const settled=[], skipped=[];
+    for(const p of pending){
+      try{
+        const fixture=await getFixture(p.fixtureId);
+        const raw=fixture.raw||{};
+        const hs=Number(raw.home_score ?? raw.homeScore ?? raw.score?.home ?? raw.scores?.home ?? raw.home?.score);
+        const as=Number(raw.away_score ?? raw.awayScore ?? raw.score?.away ?? raw.scores?.away ?? raw.away?.score);
+        if(Number.isInteger(hs)&&Number.isInteger(as)){
+          settled.push(saveSettlement(p,p.fixtureId,hs,as,"SportScore-auto"));
+        } else {
+          skipped.push({fixtureId:p.fixtureId,reason:"Final score not available yet"});
+        }
+      }catch(err){
+        skipped.push({fixtureId:p.fixtureId,reason:err.message});
+      }
+    }
+    return sendJSON(res,200,{ok:true,checked:pending.length,settled:settled.length,results:settled,skipped});
   }
 
   /* ---------------------------------
@@ -1591,27 +1707,39 @@ async function api(
      PERFORMANCE
   --------------------------------- */
 
-  if (url.pathname === "/api/performance") {
-    const rows = [];
-    for (const result of db.results || []) {
-      const prediction = [...db.predictions].reverse().find(p => String(p.fixtureId) === String(result.fixtureId));
-      if (prediction) rows.push({ prediction, result });
-    }
-    let correct = 0, brier = 0, logLoss = 0;
+  if (url.pathname === "/api/performance" || url.pathname === "/api/backtest") {
+    const rows = settlementRows();
+    let correct=0, brier=0, logLoss=0, over25Correct=0, bttsCorrect=0, exactScore=0;
     for (const row of rows) {
-      if (row.prediction.pick === row.result.actualPick) correct++;
+      if (row.result.correct) correct++;
+      if (row.result.over25Correct) over25Correct++;
+      if (row.result.bttsCorrect) bttsCorrect++;
+      if (row.result.correctScore) exactScore++;
       brier += brierScore(row.result.actualPick, row.prediction.probabilities || {});
       logLoss += logLossScore(row.result.actualPick, row.prediction.probabilities || {});
     }
+    const accuracy=rows.length?Math.round(correct/rows.length*1000)/10:0;
+    const over25Accuracy=rows.length?Math.round(over25Correct/rows.length*1000)/10:0;
+    const bttsAccuracy=rows.length?Math.round(bttsCorrect/rows.length*1000)/10:0;
+    const exactScoreAccuracy=rows.length?Math.round(exactScore/rows.length*1000)/10:0;
     return sendJSON(res,200,{
       ok:true,
+      mode:url.pathname === "/api/backtest" ? "settled-history-backtest" : "live-performance",
       totalPredictions:db.predictions.length,
       settled:rows.length,
+      completed:rows.length,
       correct,
-      accuracy:rows.length ? Math.round(correct/rows.length*1000)/10 : 0,
-      brierScore:rows.length ? Math.round(brier/rows.length*10000)/10000 : null,
-      logLoss:rows.length ? Math.round(logLoss/rows.length*10000)/10000 : null,
-      note:rows.length<30 ? "Calibration is preliminary until 30+ settled predictions." : "Metrics use settled predictions only."
+      accuracy,
+      over25Accuracy,
+      bttsAccuracy,
+      exactScoreAccuracy,
+      brierScore:rows.length?Math.round(brier/rows.length*10000)/10000:null,
+      logLoss:rows.length?Math.round(logLoss/rows.length*10000)/10000:null,
+      calibration:calibrationBuckets(rows),
+      aiUsage:aiUsageToday(),
+      note:rows.length<30
+        ? "Calibration is preliminary until 30+ settled predictions."
+        : "Metrics use settled predictions only. Backtest here evaluates stored settled predictions; it does not invent historical results."
     });
   }
 
