@@ -913,6 +913,13 @@ async function analyze(fixtureId, suppliedMatch = null) {
 
   const statistical = predict(statisticalFixture, homeForm, awayForm);
 
+  const rawSource = fixture.raw || {};
+  const sourceIntelligence = {
+    lineups: rawSource.lineups || rawSource.lineup || rawSource.formation || null,
+    injuries: rawSource.injuries || rawSource.injury || rawSource.absences || null,
+    teamNews: rawSource.team_news || rawSource.teamNews || rawSource.news || null
+  };
+
   let ai;
   try {
     ai = await runFootballAI({
@@ -926,6 +933,7 @@ async function analyze(fixtureId, suppliedMatch = null) {
       },
       homeForm,
       awayForm,
+      sourceIntelligence,
       statistical
     });
   } catch (err) {
@@ -1266,6 +1274,22 @@ async function api(
           : "OPENAI_API_KEY haijawekwa kwenye Render."
       }
     );
+  }
+
+  /* ---------------------------------
+     SYSTEM STATUS
+  --------------------------------- */
+  if (url.pathname === "/api/system-status") {
+    const rows = settlementRows();
+    return sendJSON(res,200,{
+      ok:true,
+      provider:"SportScore",
+      ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},
+      predictions:{total:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.length-rows.length)},
+      calibrationReady:rows.length>=30,
+      engine:"Fanuel Deep Ensemble (Statistical + AI)",
+      oddsUsed:false
+    });
   }
 
   /* ---------------------------------
