@@ -1433,80 +1433,38 @@ async function api(
     }
 
     try {
-      const allMatches = [];
-      const seen = new Set();
-      const startDate = new Date(requestedDate + "T00:00:00Z");
+      // Siku moja tu: SportScore ina limit ya 200, lakini app itatumia
+      // hadi 150 upcoming matches kwa siku ili kudhibiti mzigo wa AI.
+      const result = await getFixtures(requestedDate);
       const now = Date.now();
 
-      // Search up to 30 days ahead until at least 250 valid upcoming matches exist.
-      for (let i = 0; i < 30 && allMatches.length < 250; i++) {
-        const currentDate = new Date(startDate);
-        currentDate.setUTCDate(currentDate.getUTCDate() + i);
-        const date = currentDate.toISOString().slice(0, 10);
+      const matches = (Array.isArray(result.matches) ? result.matches : [])
+        .filter(match => {
+          const kickoff = match.starting_at
+            ? new Date(match.starting_at).getTime()
+            : NaN;
 
-        try {
-          const result = await getFixtures(date);
-          const matches = Array.isArray(result.matches) ? result.matches : [];
-
-          for (const match of matches) {
-            const key = String(
-              match.slug ||
-              match.id ||
-              (match.name + "|" + (match.starting_at || ""))
-            );
-
-            if (seen.has(key)) continue;
-
-            const kickoff = match.starting_at
-              ? new Date(match.starting_at).getTime()
-              : NaN;
-
-            if (Number.isFinite(kickoff) && kickoff <= now) continue;
-
-            const rawStatus = match.status;
-            const status = String(
-              typeof rawStatus === "object"
-                ? (rawStatus?.name || rawStatus?.type || rawStatus?.status || rawStatus?.short || "")
-                : (rawStatus || "")
-            ).toLowerCase().trim();
-
-            const blockedStatuses = [
-              "finished","ft","full time","ended","completed","complete",
-              "live","inplay","in-play","1h","2h","ht","half time",
-              "halftime","extra time","et","penalties",
-              "cancelled","canceled","abandoned"
-            ];
-
-            if (blockedStatuses.some(x => status.includes(x))) continue;
-
-            seen.add(key);
-            allMatches.push(match);
-
-            if (allMatches.length >= 250) break;
-          }
-        } catch (err) {
-          console.log("Upcoming date failed:", date, err.message);
-        }
-      }
-
-      const upcoming = allMatches.sort((a, b) => {
-        const ta = new Date(a.starting_at || 0).getTime();
-        const tb = new Date(b.starting_at || 0).getTime();
-        return ta - tb;
-      });
+          if (Number.isFinite(kickoff) && kickoff <= now) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          const ta = new Date(a.starting_at || 0).getTime();
+          const tb = new Date(b.starting_at || 0).getTime();
+          return ta - tb;
+        })
+        .slice(0, 150);
 
       return sendJSON(res, 200, {
         ok: true,
         provider: "SportScore",
         requestedDate,
-        minimumRequested: 250,
-        count: upcoming.length,
-        matches: upcoming,
+        dailyLimit: 150,
+        count: matches.length,
+        matches,
         message:
-          upcoming.length >= 250
-            ? upcoming.length + " upcoming matches found."
-            : upcoming.length +
-              " upcoming matches found. SportScore did not provide 250 valid upcoming matches in the searched period."
+          matches.length
+            ? matches.length + " upcoming matches found for " + requestedDate + "."
+            : "No upcoming matches found for " + requestedDate + "."
       });
 
     } catch (err) {
