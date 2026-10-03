@@ -1412,6 +1412,11 @@
 
     try {
 
+      // Automatically settle finished predictions before refreshing performance.
+      try {
+        await fetch("/api/settle-pending", { method: "POST", cache: "no-store" });
+      } catch (_) {}
+
       const response =
         await fetch(
           "/api/performance",
@@ -1469,6 +1474,10 @@
           </div>
           <div class="stat"><b>Brier Score</b><br>${escapeHTML(p.brierScore ?? "N/A")}</div>
           <div class="stat"><b>Log Loss</b><br>${escapeHTML(p.logLoss ?? "N/A")}</div>
+          <div class="stat"><b>Over 2.5</b><br>${escapeHTML(p.over25Accuracy ?? "N/A")}%</div>
+          <div class="stat"><b>BTTS</b><br>${escapeHTML(p.bttsAccuracy ?? "N/A")}%</div>
+          <div class="stat"><b>Exact Score</b><br>${escapeHTML(p.exactScoreAccuracy ?? "N/A")}%</div>
+          <div class="stat"><b>AI Today</b><br>${escapeHTML(p.aiUsage?.used ?? 0)} / ${escapeHTML(p.aiUsage?.limit ?? 150)}</div>
 
         </div>
 
