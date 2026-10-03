@@ -978,6 +978,10 @@
     const awayForm =
       form.away || {};
 
+    const quality = prediction.dataQuality || {};
+    const qualityLevel = String(quality.level || "low").toLowerCase();
+    const qualityLabel = qualityLevel === "high" ? "🟢 HIGH DATA" : qualityLevel === "medium" ? "🟡 MEDIUM DATA" : "🔴 LOW DATA";
+
 
     box.innerHTML = `
 
@@ -993,6 +997,12 @@
             prediction.pick ||
             "N/A"
           )}
+        </div>
+
+        <div class="status" style="margin-top:10px;">
+          <b>Data Quality: ${escapeHTML(qualityLabel)}</b>
+          ${quality.score != null ? " • Score: " + escapeHTML(quality.score) + "/100" : ""}
+          <br><small>${escapeHTML(quality.reason || "Recent form data is limited.")}</small>
         </div>
 
         <div class="confidence">
@@ -1171,6 +1181,7 @@
             </ul>
           ` : ""}
           <div class="risk"><b>Risk:</b> ${escapeHTML(prediction.ai?.risk || "Not specified")}</div>
+          <div class="risk"><b>Data Quality:</b> ${escapeHTML(qualityLabel)} — Home ${escapeHTML(quality.homeGames ?? homeForm.games ?? 0)} games, Away ${escapeHTML(quality.awayGames ?? awayForm.games ?? 0)} games</div>
         </div>
 
         <div class="stats">
