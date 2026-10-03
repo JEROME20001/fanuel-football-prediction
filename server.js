@@ -197,6 +197,8 @@ async function getFixtures(date) {
 
   const rawMatches = extractMatches(data);
   const seen = new Set();
+  const now = Date.now();
+
   const matches = rawMatches
     .map(normalizeSportScoreMatch)
     .filter(match => {
@@ -205,9 +207,43 @@ async function getFixtures(date) {
         match.id ||
         (match.name + "|" + (match.starting_at || ""))
       );
+
       if (seen.has(key)) return false;
       seen.add(key);
-      return Boolean(match.homeTeam?.name && match.awayTeam?.name);
+
+      if (!match.homeTeam?.name || !match.awayTeam?.name) return false;
+
+      const rawStatus = match.status;
+      const status = String(
+        typeof rawStatus === "object"
+          ? (rawStatus?.name || rawStatus?.type || rawStatus?.status || rawStatus?.short || "")
+          : (rawStatus || "")
+      ).toLowerCase().trim();
+
+      const finishedStatuses = [
+        "finished","ft","full time","ended","completed","complete",
+        "after","cancelled","canceled","abandoned"
+      ];
+
+      const liveStatuses = [
+        "live","inplay","in-play","1h","2h","ht","half time",
+        "halftime","extra time","et","penalties"
+      ];
+
+      if (finishedStatuses.some(x => status.includes(x))) return false;
+      if (liveStatuses.some(x => status.includes(x))) return false;
+
+      if (match.starting_at) {
+        const kickoff = new Date(match.starting_at).getTime();
+        if (Number.isFinite(kickoff) && kickoff <= now) return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      const ta = new Date(a.starting_at || 0).getTime();
+      const tb = new Date(b.starting_at || 0).getTime();
+      return ta - tb;
     });
 
   const result = {
@@ -218,8 +254,8 @@ async function getFixtures(date) {
     count: matches.length,
     matches,
     message: matches.length
-      ? matches.length + " matches found."
-      : "SportScore returned 0 matches for " + date + "."
+      ? matches.length + " upcoming matches found."
+      : "No upcoming matches found for " + date + "."
   };
 
   cacheSet(cacheKey, result, 2);
@@ -385,8 +421,15 @@ function teamForm(teamRef, fixtures) {
 
   if (!last.length) {
     return {
-      matches: 0, wins: 0, draws: 0, losses: 0,
-      goalsFor: 1.35, goalsAgainst: 1.10, points: 0, form: "N/A"
+      matches: 0,
+      games: 0,
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      goalsFor: 1.35,
+      goalsAgainst: 1.10,
+      points: 0,
+      form: "N/A"
     };
   }
 
@@ -401,7 +444,10 @@ function teamForm(teamRef, fixtures) {
 
   return {
     matches: last.length,
-    wins, draws, losses,
+    games: last.length,
+    wins,
+    draws,
+    losses,
     goalsFor: goalsFor / last.length,
     goalsAgainst: goalsAgainst / last.length,
     points: wins * 3 + draws,
@@ -1373,72 +1419,103 @@ async function api(
      UPCOMING FIXTURES
   --------------------------------- */
 
-  if (
-    url.pathname ===
-    "/api/upcoming"
-  ) {
+  if (url.pathname === "/api/upcoming") {
 
-    const date =
-      url.searchParams.get(
-        "date"
-      ) ||
-      new Date()
-        .toISOString()
-        .slice(
-          0,
-          10
-        );
+    const requestedDate =
+      url.searchParams.get("date") ||
+      new Date().toISOString().slice(0, 10);
 
-    if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(
-        date
-      )
-    ) {
-
-      return sendJSON(
-        res,
-        400,
-        {
-
-          ok: false,
-
-          error:
-            "Tumia date ya YYYY-MM-DD"
-        }
-      );
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(requestedDate)) {
+      return sendJSON(res, 400, {
+        ok: false,
+        error: "Tumia date ya YYYY-MM-DD"
+      });
     }
 
     try {
+      const allMatches = [];
+      const seen = new Set();
+      const startDate = new Date(requestedDate + "T00:00:00Z");
+      const now = Date.now();
 
-      const result =
-        await getFixtures(
-          date
-        );
+      // Search up to 14 days ahead until at least 50 valid upcoming matches exist.
+      for (let i = 0; i < 14 && allMatches.length < 50; i++) {
+        const currentDate = new Date(startDate);
+        currentDate.setUTCDate(currentDate.getUTCDate() + i);
+        const date = currentDate.toISOString().slice(0, 10);
 
-      return sendJSON(
-        res,
-        200,
-        result
-      );
+        try {
+          const result = await getFixtures(date);
+          const matches = Array.isArray(result.matches) ? result.matches : [];
+
+          for (const match of matches) {
+            const key = String(
+              match.slug ||
+              match.id ||
+              (match.name + "|" + (match.starting_at || ""))
+            );
+
+            if (seen.has(key)) continue;
+
+            const kickoff = match.starting_at
+              ? new Date(match.starting_at).getTime()
+              : NaN;
+
+            if (Number.isFinite(kickoff) && kickoff <= now) continue;
+
+            const rawStatus = match.status;
+            const status = String(
+              typeof rawStatus === "object"
+                ? (rawStatus?.name || rawStatus?.type || rawStatus?.status || rawStatus?.short || "")
+                : (rawStatus || "")
+            ).toLowerCase().trim();
+
+            const blockedStatuses = [
+              "finished","ft","full time","ended","completed","complete",
+              "live","inplay","in-play","1h","2h","ht","half time",
+              "halftime","extra time","et","penalties",
+              "cancelled","canceled","abandoned"
+            ];
+
+            if (blockedStatuses.some(x => status.includes(x))) continue;
+
+            seen.add(key);
+            allMatches.push(match);
+
+            if (allMatches.length >= 50) break;
+          }
+        } catch (err) {
+          console.log("Upcoming date failed:", date, err.message);
+        }
+      }
+
+      const upcoming = allMatches.sort((a, b) => {
+        const ta = new Date(a.starting_at || 0).getTime();
+        const tb = new Date(b.starting_at || 0).getTime();
+        return ta - tb;
+      });
+
+      return sendJSON(res, 200, {
+        ok: true,
+        provider: "SportScore",
+        requestedDate,
+        minimumRequested: 50,
+        count: upcoming.length,
+        matches: upcoming,
+        message:
+          upcoming.length >= 50
+            ? upcoming.length + " upcoming matches found."
+            : upcoming.length +
+              " upcoming matches found. SportScore did not provide 50+ valid upcoming matches in the searched period."
+      });
 
     } catch (err) {
+      console.log("Upcoming fixtures error:", err.message);
 
-      console.log(
-        "Fixture error:",
-        err.message
-      );
-
-      return sendJSON(
-        res,
-        500,
-        {
-
-          ok: false,
-
-          error:
-            err.message
-        }
-      );
+      return sendJSON(res, 500, {
+        ok: false,
+        error: err.message
+      });
     }
   }
 
