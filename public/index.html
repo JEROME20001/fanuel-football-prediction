@@ -981,6 +981,7 @@
     const quality = prediction.dataQuality || {};
     const qualityLevel = String(quality.level || "low").toLowerCase();
     const qualityLabel = qualityLevel === "high" ? "🟢 HIGH DATA" : qualityLevel === "medium" ? "🟡 MEDIUM DATA" : "🔴 LOW DATA";
+    const ensemble = prediction.ensemble || {};
 
 
     box.innerHTML = `
@@ -1182,6 +1183,13 @@
           ` : ""}
           <div class="risk"><b>Risk:</b> ${escapeHTML(prediction.ai?.risk || "Not specified")}</div>
           <div class="risk"><b>Data Quality:</b> ${escapeHTML(qualityLabel)} — Home ${escapeHTML(quality.homeGames ?? homeForm.games ?? 0)} games, Away ${escapeHTML(quality.awayGames ?? awayForm.games ?? 0)} games</div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><b>Model Agreement</b><br>${escapeHTML(ensemble.agreement ?? "N/A")}%</div>
+          <div class="stat"><b>Statistical Weight</b><br>${escapeHTML(ensemble.statisticalWeight ?? "N/A")}%</div>
+          <div class="stat"><b>AI Weight</b><br>${escapeHTML(ensemble.aiWeight ?? "N/A")}%</div>
+          <div class="stat"><b>Model Gap</b><br>${escapeHTML(ensemble.modelGap ?? "N/A")}%</div>
         </div>
 
         <div class="stats">
