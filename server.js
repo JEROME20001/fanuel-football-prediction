@@ -1035,6 +1035,15 @@ function sendJSON(
 
 
 
+function brierScore(actual, p) {
+  const t = actual === "Home Win" ? [1,0,0] : actual === "Draw" ? [0,1,0] : [0,0,1];
+  const v = [Number(p.home||0)/100, Number(p.draw||0)/100, Number(p.away||0)/100];
+  return (v[0]-t[0])**2 + (v[1]-t[1])**2 + (v[2]-t[2])**2;
+}
+function logLossScore(actual, p) {
+  const v = actual === "Home Win" ? Number(p.home||0)/100 : actual === "Draw" ? Number(p.draw||0)/100 : Number(p.away||0)/100;
+  return -Math.log(Math.max(0.0001, Math.min(0.9999, v)));
+}
 /* =====================================================
    API ROUTES
 ===================================================== */
@@ -1574,51 +1583,28 @@ async function api(
      PERFORMANCE
   --------------------------------- */
 
-  if (
-    url.pathname ===
-    "/api/performance"
-  ) {
-
-    const results =
-      db.results ||
-      [];
-
-    const settled =
-      results.length;
-
-    const correct =
-      results.filter(
-        x =>
-          x.correct ===
-          true
-      ).length;
-
-    return sendJSON(
-      res,
-      200,
-      {
-
-        ok: true,
-
-        totalPredictions:
-          db.predictions.length,
-
-        settled,
-
-        correct,
-
-        accuracy:
-          settled
-            ? Math.round(
-                (
-                  correct /
-                  settled
-                ) *
-                1000
-              ) / 10
-            : 0
-      }
-    );
+  if (url.pathname === "/api/performance") {
+    const rows = [];
+    for (const result of db.results || []) {
+      const prediction = [...db.predictions].reverse().find(p => String(p.fixtureId) === String(result.fixtureId));
+      if (prediction) rows.push({ prediction, result });
+    }
+    let correct = 0, brier = 0, logLoss = 0;
+    for (const row of rows) {
+      if (row.prediction.pick === row.result.actualPick) correct++;
+      brier += brierScore(row.result.actualPick, row.prediction.probabilities || {});
+      logLoss += logLossScore(row.result.actualPick, row.prediction.probabilities || {});
+    }
+    return sendJSON(res,200,{
+      ok:true,
+      totalPredictions:db.predictions.length,
+      settled:rows.length,
+      correct,
+      accuracy:rows.length ? Math.round(correct/rows.length*1000)/10 : 0,
+      brierScore:rows.length ? Math.round(brier/rows.length*10000)/10000 : null,
+      logLoss:rows.length ? Math.round(logLoss/rows.length*10000)/10000 : null,
+      note:rows.length<30 ? "Calibration is preliminary until 30+ settled predictions." : "Metrics use settled predictions only."
+    });
   }
 
   /* ---------------------------------
