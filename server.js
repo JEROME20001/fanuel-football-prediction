@@ -992,7 +992,15 @@ async function analyze(fixtureId, suppliedMatch = null) {
     model: ai.enabled ? "Fanuel Deep Ensemble (Statistical + AI)" : "Fanuel Statistical AI (AI fallback)",
     usesOdds: false,
     provider: "SportScore",
-    predictionSnapshot: { probabilities:{...result.probabilities}, over25:result.over25, btts:result.btts, confidence:result.confidence }
+    predictionSnapshot: null
+  };
+
+  // Build the snapshot after the result object exists.
+  result.predictionSnapshot = {
+    probabilities: { ...result.probabilities },
+    over25: result.over25,
+    btts: result.btts,
+    confidence: result.confidence
   };
 
   db.predictions.push(result);
