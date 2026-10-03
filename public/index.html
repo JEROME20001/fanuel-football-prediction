@@ -868,10 +868,41 @@
   }
 
   async function autoAnalyzeMatches(matches) {
-    // Run one at a time to avoid overwhelming SportScore.
-    for (let i = 0; i < matches.length; i++) {
-      await analyzeMatch(matches[i], i);
+    // Analyze several matches at once with controlled concurrency.
+    const total = matches.length;
+    const concurrency = Math.min(4, total);
+    let completed = 0;
+    let nextIndex = 0;
+
+    showStatus(
+      "🧠 Automatic AI analysis started: 0/" + total + " matches completed. Running up to " + concurrency + " analyses at once.",
+      "success"
+    );
+
+    async function worker() {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= total) return;
+
+        await analyzeMatch(matches[index], index);
+        completed++;
+
+        showStatus(
+          "🧠 Automatic AI analysis: " + completed + "/" + total + " matches completed.",
+          completed === total ? "success" : ""
+        );
+      }
     }
+
+    await Promise.all(
+      Array.from({length: concurrency}, () => worker())
+    );
+
+    showStatus(
+      "✅ Automatic AI analysis completed: " + completed + "/" + total + " matches.",
+      "success"
+    );
+
     loadSystemStatus();
     loadPredictionHistory();
     loadPerformance();
