@@ -414,44 +414,43 @@ function teamForm(teamRef, fixtures) {
     let result = "D";
     if (gf > ga) result = "W";
     if (gf < ga) result = "L";
-    games.push({ result, gf, ga });
+    games.push({ result, gf, ga, date: raw.starting_at || raw.date || raw.time || null, venueHome: isHome });
   }
 
-  const last = games.slice(0, 5);
-
+  const last = games.sort((a,b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()).slice(0, 10);
   if (!last.length) {
     return {
-      matches: 0,
-      games: 0,
-      wins: 0,
-      draws: 0,
-      losses: 0,
-      goalsFor: 1.35,
-      goalsAgainst: 1.10,
-      points: 0,
-      form: "N/A"
+      matches:0, games:0, wins:0, draws:0, losses:0, goalsFor:1.35, goalsAgainst:1.10, points:0,
+      weightedPoints:0, weightedGoalsFor:1.35, weightedGoalsAgainst:1.10, goalDiff:0, strengthRating:1500,
+      homeGames:0, awayGames:0, homeGoalsFor:1.35, homeGoalsAgainst:1.10, awayGoalsFor:1.35, awayGoalsAgainst:1.10,
+      form:"N/A"
     };
   }
-
-  let wins = 0, draws = 0, losses = 0, goalsFor = 0, goalsAgainst = 0;
-  for (const game of last) {
-    goalsFor += game.gf;
-    goalsAgainst += game.ga;
-    if (game.result === "W") wins++;
-    else if (game.result === "D") draws++;
-    else losses++;
-  }
-
+  let wins=0, draws=0, losses=0, goalsFor=0, goalsAgainst=0, weightedPoints=0, weightedGoalsFor=0, weightedGoalsAgainst=0, weightSum=0;
+  const homeSplit=[], awaySplit=[];
+  last.forEach((game,index)=>{
+    const weight=Math.max(0.35,Math.exp(-0.18*index));
+    const pts=game.result==="W"?3:game.result==="D"?1:0;
+    goalsFor+=game.gf; goalsAgainst+=game.ga;
+    weightedPoints+=pts*weight; weightedGoalsFor+=game.gf*weight; weightedGoalsAgainst+=game.ga*weight; weightSum+=weight;
+    if(game.result==="W") wins++; else if(game.result==="D") draws++; else losses++;
+    if(game.venueHome) homeSplit.push(game); else awaySplit.push(game);
+  });
+  const avg=arr=>arr.length?{gf:arr.reduce((n,g)=>n+g.gf,0)/arr.length,ga:arr.reduce((n,g)=>n+g.ga,0)/arr.length}:null;
+  const ha=avg(homeSplit), aa=avg(awaySplit);
+  const ppg=(wins*3+draws)/last.length, gd=(goalsFor-goalsAgainst)/last.length;
+  const strengthRating=Math.max(1200,Math.min(1800,1500+(ppg-1.35)*180+gd*70));
   return {
-    matches: last.length,
-    games: last.length,
-    wins,
-    draws,
-    losses,
-    goalsFor: goalsFor / last.length,
-    goalsAgainst: goalsAgainst / last.length,
-    points: wins * 3 + draws,
-    form: last.map(x => x.result).join("")
+    matches:last.length, games:last.length, wins, draws, losses,
+    goalsFor:goalsFor/last.length, goalsAgainst:goalsAgainst/last.length, points:wins*3+draws,
+    weightedPoints:weightSum?weightedPoints/weightSum:0,
+    weightedGoalsFor:weightSum?weightedGoalsFor/weightSum:goalsFor/last.length,
+    weightedGoalsAgainst:weightSum?weightedGoalsAgainst/weightSum:goalsAgainst/last.length,
+    goalDiff:goalsFor-goalsAgainst, strengthRating:Math.round(strengthRating*10)/10,
+    homeGames:homeSplit.length, awayGames:awaySplit.length,
+    homeGoalsFor:ha?.gf??1.35, homeGoalsAgainst:ha?.ga??1.10,
+    awayGoalsFor:aa?.gf??1.35, awayGoalsAgainst:aa?.ga??1.10,
+    form:last.map(x=>x.result).join("")
   };
 }
 
@@ -609,210 +608,59 @@ function probabilities(
    PREDICTION
 ===================================================== */
 
-function predict(
-  fixture,
-  homeForm,
-  awayForm
-) {
-
-  let homeLambda =
-    (
-      homeForm.goalsFor +
-      awayForm.goalsAgainst
-    ) / 2;
-
-  let awayLambda =
-    (
-      awayForm.goalsFor +
-      homeForm.goalsAgainst
-    ) / 2;
-
-  /* HOME ADVANTAGE */
-
-  homeLambda *=
-    1.08;
-
-  /* FORM */
-
-  const homeFormFactor =
-    homeForm.points /
-    Math.max(
-      1,
-      homeForm.matches * 3
-    );
-
-  const awayFormFactor =
-    awayForm.points /
-    Math.max(
-      1,
-      awayForm.matches * 3
-    );
-
-  if (
-    homeForm.matches > 0
-  ) {
-
-    homeLambda *=
-      0.90 +
-      homeFormFactor *
-      0.20;
+function scoreMatrix(homeLambda, awayLambda, maxGoals=6) {
+  const cells=[]; let total=0; const rho=-0.05;
+  for(let h=0;h<=maxGoals;h++) for(let a=0;a<=maxGoals;a++){
+    let p=poisson(homeLambda,h)*poisson(awayLambda,a);
+    if(h===0&&a===0)p*=1-homeLambda*awayLambda*rho;
+    else if(h===0&&a===1)p*=1+homeLambda*rho;
+    else if(h===1&&a===0)p*=1+awayLambda*rho;
+    else if(h===1&&a===1)p*=1-rho;
+    cells.push({home:h,away:a,probability:p}); total+=p;
   }
-
-  if (
-    awayForm.matches > 0
-  ) {
-
-    awayLambda *=
-      0.90 +
-      awayFormFactor *
-      0.20;
+  cells.forEach(x=>x.probability/=total); return cells;
+}
+function probabilitiesFromMatrix(cells){
+  let home=0,draw=0,away=0,over15=0,over25=0,over35=0,btts=0;
+  for(const c of cells){
+    if(c.home>c.away)home+=c.probability; else if(c.home===c.away)draw+=c.probability; else away+=c.probability;
+    if(c.home+c.away>=2)over15+=c.probability;
+    if(c.home+c.away>=3)over25+=c.probability;
+    if(c.home+c.away>=4)over35+=c.probability;
+    if(c.home>=1&&c.away>=1)btts+=c.probability;
   }
-
-  homeLambda =
-    Math.max(
-      0.25,
-      Math.min(
-        homeLambda,
-        4
-      )
-    );
-
-  awayLambda =
-    Math.max(
-      0.20,
-      Math.min(
-        awayLambda,
-        4
-      )
-    );
-
-  const p =
-    probabilities(
-      homeLambda,
-      awayLambda
-    );
-
-  const homePct =
-    Math.round(
-      p.home * 1000
-    ) / 10;
-
-  const drawPct =
-    Math.round(
-      p.draw * 1000
-    ) / 10;
-
-  const awayPct =
-    Math.round(
-      p.away * 1000
-    ) / 10;
-
-  let pick =
-    "Draw";
-
-  let confidence =
-    drawPct;
-
-  if (
-    homePct >
-    confidence
-  ) {
-
-    pick =
-      "Home Win";
-
-    confidence =
-      homePct;
-  }
-
-  if (
-    awayPct >
-    confidence
-  ) {
-
-    pick =
-      "Away Win";
-
-    confidence =
-      awayPct;
-  }
-
-  const quality = dataQuality(homeForm, awayForm);\n\n  return {\n    dataQuality: quality,
-
-    fixtureId:
-      fixture.fixture.id,
-
-    match:
-      `${fixture.teams.home.name} vs ` +
-      `${fixture.teams.away.name}`,
-
-    homeTeam:
-      fixture.teams.home.name,
-
-    awayTeam:
-      fixture.teams.away.name,
-
-    pick,
-
-    confidence,
-
-    probabilities: {
-
-      home:
-        homePct,
-
-      draw:
-        drawPct,
-
-      away:
-        awayPct
-    },
-
-    doubleChance:
-      homePct >= awayPct
-        ? "1X"
-        : "X2",
-
-    over25:
-      Math.round(
-        p.over25 * 1000
-      ) / 10,
-
-    btts:
-      Math.round(
-        p.btts * 1000
-      ) / 10,
-
-    expectedGoals: {
-
-      home:
-        Math.round(
-          homeLambda * 100
-        ) / 100,
-
-      away:
-        Math.round(
-          awayLambda * 100
-        ) / 100
-    },
-
-    form: {
-
-      home:
-        homeForm,
-
-      away:
-        awayForm
-    },
-
-    model:
-      "Fanuel Statistical AI",
-
-    usesOdds:
-      false,
-
-    createdAt:
-      new Date().toISOString()
+  return {home,draw,away,over15,over25,over35,btts};
+}
+function topScores(cells,limit=3){
+  return [...cells].sort((a,b)=>b.probability-a.probability).slice(0,limit).map(x=>({score:x.home+"-"+x.away,probability:Math.round(x.probability*1000)/10}));
+}
+function predict(fixture,homeForm,awayForm){
+  const quality=dataQuality(homeForm,awayForm);
+  const homeAttack=homeForm.homeGames>=2?homeForm.homeGoalsFor:homeForm.weightedGoalsFor;
+  const homeDefense=homeForm.homeGames>=2?homeForm.homeGoalsAgainst:homeForm.weightedGoalsAgainst;
+  const awayAttack=awayForm.awayGames>=2?awayForm.awayGoalsFor:awayForm.weightedGoalsFor;
+  const awayDefense=awayForm.awayGames>=2?awayForm.awayGoalsAgainst:awayForm.weightedGoalsAgainst;
+  const gap=(homeForm.strengthRating||1500)-(awayForm.strengthRating||1500);
+  const sh=Math.max(0.82,Math.min(1.18,1+gap/1800)), sa=Math.max(0.82,Math.min(1.18,1-gap/1800));
+  let homeLambda=((homeAttack+awayDefense)/2)*1.08*sh, awayLambda=((awayAttack+homeDefense)/2)*sa;
+  const hr=homeForm.games?Math.max(0.85,Math.min(1.15,0.88+(homeForm.weightedPoints/3)*0.24)):1;
+  const ar=awayForm.games?Math.max(0.85,Math.min(1.15,0.88+(awayForm.weightedPoints/3)*0.24)):1;
+  homeLambda*=hr; awayLambda*=ar;
+  homeLambda=Math.max(0.20,Math.min(homeLambda,4.2)); awayLambda=Math.max(0.15,Math.min(awayLambda,4.2));
+  const cells=scoreMatrix(homeLambda,awayLambda,6), p=probabilitiesFromMatrix(cells);
+  const homePct=Math.round(p.home*1000)/10, drawPct=Math.round(p.draw*1000)/10, awayPct=Math.round(p.away*1000)/10;
+  let pick="Draw",confidence=drawPct;
+  if(homePct>confidence){pick="Home Win";confidence=homePct;} if(awayPct>confidence){pick="Away Win";confidence=awayPct;}
+  return {
+    dataQuality:quality, fixtureId:fixture.fixture.id, match:`${fixture.teams.home.name} vs ${fixture.teams.away.name}`,
+    homeTeam:fixture.teams.home.name, awayTeam:fixture.teams.away.name, pick, confidence,
+    probabilities:{home:homePct,draw:drawPct,away:awayPct}, doubleChance:homePct>=awayPct?"1X":"X2",
+    over15:Math.round(p.over15*1000)/10, over25:Math.round(p.over25*1000)/10, over35:Math.round(p.over35*1000)/10,
+    btts:Math.round(p.btts*1000)/10,
+    expectedGoals:{home:Math.round(homeLambda*100)/100,away:Math.round(awayLambda*100)/100},
+    topScores:topScores(cells,3),
+    strength:{home:homeForm.strengthRating||1500,away:awayForm.strengthRating||1500,gap:Math.round(gap*10)/10},
+    form:{home:homeForm,away:awayForm}, model:"Fanuel Statistical Deep Engine", usesOdds:false, createdAt:new Date().toISOString()
   };
 }
 
@@ -838,7 +686,7 @@ async function runFootballAI(context) {
       btts: context.statistical.btts,
       correctScore: "N/A",
       factors: [],
-      risk: "AI haijawezeshwa"
+      risk: "AI haijawezeshwa", dataQuality: context.statistical.dataQuality, ensemble: { agreement:100, modelGap:0 }
     };
   }
 
@@ -893,7 +741,8 @@ async function runFootballAI(context) {
 Analyze football fixtures using ONLY the supplied football data and statistical model output.
 Do not use bookmaker odds as an input. Do not invent injuries, news, form or facts that are not supplied.
 Treat prediction as probabilistic, never as certainty.
-Return a balanced analysis based on form, goals, home/away context and the statistical baseline.
+Return a balanced analysis based on form, goals, home/away context, team strength and the statistical baseline.
+${dataWarning}
 If evidence is weak or conflicting, use "No Strong Pick".
 Keep analysis concise and factual.`
     },
@@ -1065,7 +914,7 @@ async function analyze(fixtureId, suppliedMatch = null) {
       correctScore: "N/A",
       analysis: "AI haikupatikana; statistical baseline imetumika.",
       factors: [],
-      risk: "AI unavailable"
+      risk: "AI unavailable", dataQuality: statistical.dataQuality, ensemble: { agreement:100, modelGap:0 }
     };
   }
 
@@ -1104,7 +953,9 @@ async function analyze(fixtureId, suppliedMatch = null) {
   const modelGap = Math.abs(statistical.probabilities[finalPick === "Home Win" ? "home" : finalPick === "Draw" ? "draw" : "away"] - aiProb[finalPick === "Home Win" ? "home" : finalPick === "Draw" ? "draw" : "away"]);
   const agreement = Math.max(0, Math.min(100, 100 - modelGap));
   const baseConfidence = entries[0][1];
-  const finalConfidence = quality.level === "low" ? Math.min(baseConfidence, 65) : Math.min(baseConfidence, 85);
+  const stability = modelGap < 10 ? "STABLE" : modelGap <= 20 ? "MODERATE" : "UNSTABLE";
+  const confidenceCap = stability === "UNSTABLE" ? 70 : stability === "MODERATE" ? 78 : 85;
+  const finalConfidence = quality.level === "low" ? Math.min(baseConfidence, 60) : Math.min(baseConfidence, confidenceCap);
   const risk = quality.level === "low" || agreement < 60 ? "HIGH" : quality.level === "medium" || agreement < 80 ? "MEDIUM" : "LOW";
 
   const result = {
@@ -1122,7 +973,8 @@ async function analyze(fixtureId, suppliedMatch = null) {
       statisticalWeight: Math.round(statWeight * 100),
       aiWeight: Math.round(aiWeight * 100),
       agreement: Math.round(agreement * 10) / 10,
-      modelGap: Math.round(modelGap * 10) / 10
+      modelGap: Math.round(modelGap * 10) / 10,
+      stability
     },
     ai: {
       enabled: Boolean(ai.enabled),
@@ -1139,7 +991,8 @@ async function analyze(fixtureId, suppliedMatch = null) {
     risk,
     model: ai.enabled ? "Fanuel Deep Ensemble (Statistical + AI)" : "Fanuel Statistical AI (AI fallback)",
     usesOdds: false,
-    provider: "SportScore"
+    provider: "SportScore",
+    predictionSnapshot: { probabilities:{...result.probabilities}, over25:result.over25, btts:result.btts, confidence:result.confidence }
   };
 
   db.predictions.push(result);
@@ -1200,7 +1053,7 @@ async function api(
     const date = url.searchParams.get("date") ||
       new Date().toISOString().slice(0, 10);
 
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return sendJSON(res, 400, {
         ok: false,
         error: "Tumia date ya YYYY-MM-DD"
