@@ -1438,8 +1438,8 @@ async function api(
       const startDate = new Date(requestedDate + "T00:00:00Z");
       const now = Date.now();
 
-      // Search up to 14 days ahead until at least 50 valid upcoming matches exist.
-      for (let i = 0; i < 14 && allMatches.length < 50; i++) {
+      // Search up to 30 days ahead until at least 250 valid upcoming matches exist.
+      for (let i = 0; i < 30 && allMatches.length < 250; i++) {
         const currentDate = new Date(startDate);
         currentDate.setUTCDate(currentDate.getUTCDate() + i);
         const date = currentDate.toISOString().slice(0, 10);
@@ -1482,7 +1482,7 @@ async function api(
             seen.add(key);
             allMatches.push(match);
 
-            if (allMatches.length >= 50) break;
+            if (allMatches.length >= 250) break;
           }
         } catch (err) {
           console.log("Upcoming date failed:", date, err.message);
@@ -1499,14 +1499,14 @@ async function api(
         ok: true,
         provider: "SportScore",
         requestedDate,
-        minimumRequested: 50,
+        minimumRequested: 250,
         count: upcoming.length,
         matches: upcoming,
         message:
-          upcoming.length >= 50
+          upcoming.length >= 250
             ? upcoming.length + " upcoming matches found."
             : upcoming.length +
-              " upcoming matches found. SportScore did not provide 50+ valid upcoming matches in the searched period."
+              " upcoming matches found. SportScore did not provide 250 valid upcoming matches in the searched period."
       });
 
     } catch (err) {
