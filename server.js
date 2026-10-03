@@ -1069,17 +1069,61 @@ async function analyze(fixtureId, suppliedMatch = null) {
     };
   }
 
+  // Deep ensemble: never let the LLM overwrite the statistical model blindly.
+  // Blend the two probability signals, then derive the final pick from the blend.
+  const quality = statistical.dataQuality || dataQuality(homeForm, awayForm);
+  const statWeight = quality.level === "high" ? 0.55 : quality.level === "medium" ? 0.65 : 0.75;
+  const aiWeight = 1 - statWeight;
+  const aiProb = {
+    home: Number(ai.homeProbability ?? statistical.probabilities.home),
+    draw: Number(ai.drawProbability ?? statistical.probabilities.draw),
+    away: Number(ai.awayProbability ?? statistical.probabilities.away)
+  };
+  const aiSum = aiProb.home + aiProb.draw + aiProb.away;
+  if (aiSum > 0) {
+    aiProb.home = aiProb.home / aiSum * 100;
+    aiProb.draw = aiProb.draw / aiSum * 100;
+    aiProb.away = aiProb.away / aiSum * 100;
+  }
+  const blended = {
+    home: statistical.probabilities.home * statWeight + aiProb.home * aiWeight,
+    draw: statistical.probabilities.draw * statWeight + aiProb.draw * aiWeight,
+    away: statistical.probabilities.away * statWeight + aiProb.away * aiWeight
+  };
+  const total = blended.home + blended.draw + blended.away;
+  blended.home = blended.home / total * 100;
+  blended.draw = blended.draw / total * 100;
+  blended.away = blended.away / total * 100;
+
+  const entries = [
+    ["Home Win", blended.home],
+    ["Draw", blended.draw],
+    ["Away Win", blended.away]
+  ].sort((a,b) => b[1] - a[1]);
+  const finalPick = entries[0][0];
+  const modelGap = Math.abs(statistical.probabilities[finalPick === "Home Win" ? "home" : finalPick === "Draw" ? "draw" : "away"] - aiProb[finalPick === "Home Win" ? "home" : finalPick === "Draw" ? "draw" : "away"]);
+  const agreement = Math.max(0, Math.min(100, 100 - modelGap));
+  const baseConfidence = entries[0][1];
+  const finalConfidence = quality.level === "low" ? Math.min(baseConfidence, 65) : Math.min(baseConfidence, 85);
+  const risk = quality.level === "low" || agreement < 60 ? "HIGH" : quality.level === "medium" || agreement < 80 ? "MEDIUM" : "LOW";
+
   const result = {
     ...statistical,
-    pick: ai.bestPick === "No Strong Pick" ? statistical.pick : ai.bestPick,
-    confidence: Math.round(Number(ai.confidence || statistical.confidence) * 10) / 10,
+    pick: finalPick,
+    confidence: Math.round(finalConfidence * 10) / 10,
     probabilities: {
-      home: Math.round(Number(ai.homeProbability ?? statistical.probabilities.home) * 10) / 10,
-      draw: Math.round(Number(ai.drawProbability ?? statistical.probabilities.draw) * 10) / 10,
-      away: Math.round(Number(ai.awayProbability ?? statistical.probabilities.away) * 10) / 10
+      home: Math.round(blended.home * 10) / 10,
+      draw: Math.round(blended.draw * 10) / 10,
+      away: Math.round(blended.away * 10) / 10
     },
-    over25: Math.round(Number(ai.over25Probability ?? statistical.over25) * 10) / 10,
-    btts: Math.round(Number(ai.bttsProbability ?? statistical.btts) * 10) / 10,
+    over25: Math.round((Number(statistical.over25) * statWeight + Number(ai.over25Probability ?? statistical.over25) * aiWeight) * 10) / 10,
+    btts: Math.round((Number(statistical.btts) * statWeight + Number(ai.bttsProbability ?? statistical.btts) * aiWeight) * 10) / 10,
+    ensemble: {
+      statisticalWeight: Math.round(statWeight * 100),
+      aiWeight: Math.round(aiWeight * 100),
+      agreement: Math.round(agreement * 10) / 10,
+      modelGap: Math.round(modelGap * 10) / 10
+    },
     ai: {
       enabled: Boolean(ai.enabled),
       model: ai.model || OPENAI_MODEL,
@@ -1091,7 +1135,9 @@ async function analyze(fixtureId, suppliedMatch = null) {
       factors: Array.isArray(ai.factors) ? ai.factors : [],
       risk: ai.risk || ""
     },
-    model: ai.enabled ? "Fanuel AI + Statistical Engine" : "Fanuel Statistical AI (AI fallback)",
+    dataQuality: quality,
+    risk,
+    model: ai.enabled ? "Fanuel Deep Ensemble (Statistical + AI)" : "Fanuel Statistical AI (AI fallback)",
     usesOdds: false,
     provider: "SportScore"
   };
