@@ -1250,11 +1250,15 @@
 
                 <b>
                   ${escapeHTML(
-                    p.homeTeam
+                    p.homeTeam ||
+                    p.match?.split(" vs ")[0] ||
+                    "Home"
                   )}
                   vs
                   ${escapeHTML(
-                    p.awayTeam
+                    p.awayTeam ||
+                    p.match?.split(" vs ")[1] ||
+                    "Away"
                   )}
                 </b>
 
@@ -1263,7 +1267,9 @@
                 Pick:
                 <b>
                   ${escapeHTML(
+                    p.pick ||
                     p.prediction?.pick ||
+                    p.ai?.bestPick ||
                     "N/A"
                   )}
                 </b>
@@ -1272,7 +1278,9 @@
 
                 Confidence:
                 ${escapeHTML(
+                  p.confidence ??
                   p.prediction?.confidence ??
+                  p.ai?.confidence ??
                   0
                 )}%
 
@@ -1280,7 +1288,9 @@
 
                 Date:
                 ${escapeHTML(
-                  p.date || ""
+                  p.createdAt ||
+                  p.date ||
+                  ""
                 )}
 
                 ${
@@ -1364,6 +1374,7 @@
             <b>Completed</b><br>
             ${escapeHTML(
               p.completed ??
+              p.settled ??
               0
             )}
           </div>
