@@ -1131,7 +1131,12 @@ async function analyze(fixtureId, suppliedMatch = null) {
       homeForm,
       awayForm,
       sourceIntelligence,
-      statistical
+      statistical,
+      decisionPolicy: {
+        noForcedWinner: true,
+        noStrongPickRule: "Do not recommend Home/Draw/Away when the final ensemble has NO STRONG PICK.",
+        noDoubleChanceRecommendation: "If the final ensemble is NO STRONG PICK, do not recommend 1X or X2 in the narrative."
+      }
     });
   } catch (err) {
     console.log("OpenAI analysis error:", err.message);
@@ -1252,25 +1257,37 @@ async function analyze(fixtureId, suppliedMatch = null) {
       )
     : null;
 
-  // Model Agreement measures actual AI-vs-statistical alignment.
-  // A 1X2 distribution difference of 1 point should be visible instead of
-  // being rounded away at 99-100%. If the models choose different outcomes,
-  // apply an additional directional disagreement penalty.
+  // Model Agreement 2.0 keeps two ideas separate:
+  // 1) distribution alignment = how close the full 1X2 probability shapes are
+  // 2) decision agreement = whether AI and statistics choose the same direction
+  // This is more honest than forcing one percentage to look "dynamic".
   const rawPickAgreement = aiEnabled
     ? aiPick === rawFinalPick
     : null;
 
   const agreement = aiEnabled
     ? Math.max(
-        20,
+        0,
         Math.min(
           100,
-          100 -
-          (distributionDistance * 2.5) -
-          (rawPickAgreement ? 0 : 15)
+          100 - (distributionDistance * 2.5)
         )
       )
     : null;
+
+  const decisionAgreement = aiEnabled
+    ? (rawPickAgreement ? 100 : 0)
+    : null;
+
+  const agreementBand = !aiEnabled
+    ? "STATISTICAL ONLY"
+    : agreement >= 95
+      ? "VERY HIGH"
+      : agreement >= 85
+        ? "HIGH"
+        : agreement >= 70
+          ? "MODERATE"
+          : "LOW";
 
   const marginBonus =
     probabilityMargin >= 35 ? 5 :
@@ -1280,8 +1297,10 @@ async function analyze(fixtureId, suppliedMatch = null) {
     probabilityMargin >= 7 ? 0 :
     -3;
 
+  // Agreement must not create confidence by itself.
+  // It can only penalize confidence when the models materially disagree.
   const agreementAdjustment = aiEnabled
-    ? Math.max(-4, Math.min(3, (agreement - 75) / 6))
+    ? Math.max(-4, Math.min(0, (agreement - 75) / 6))
     : 0;
 
   const dataAdjustment =
@@ -1324,10 +1343,10 @@ async function analyze(fixtureId, suppliedMatch = null) {
   const stability = !aiEnabled
     ? "STATISTICAL ONLY"
     : !rawPickAgreement
-      ? (distributionDistance <= 12 ? "MODERATE" : "UNSTABLE")
-      : distributionDistance <= 4
+      ? (distributionDistance <= 8 ? "MODERATE" : "UNSTABLE")
+      : distributionDistance <= 3
         ? "STABLE"
-        : distributionDistance <= 10
+        : distributionDistance <= 8
           ? "MODERATE"
           : "UNSTABLE";
 
@@ -1361,15 +1380,19 @@ async function analyze(fixtureId, suppliedMatch = null) {
       statisticalWeight: Math.round(statWeight * 100),
       aiWeight: Math.round(aiWeight * 100),
       agreement: aiEnabled ? Math.round(agreement * 10) / 10 : null,
+      agreementBand,
+      decisionAgreement,
+      decisionAgreementLabel: aiEnabled ? (rawPickAgreement ? "SAME PICK" : "DIFFERENT PICK") : "N/A",
       modelGap: aiEnabled ? Math.round(modelGap * 10) / 10 : null,
       probabilityGap: aiEnabled ? Math.round(probabilityGap * 10) / 10 : null,
+      distributionDistance: aiEnabled ? Math.round(distributionDistance * 10) / 10 : null,
       stability,
       probabilityMargin: Math.round(probabilityMargin * 10) / 10,
       noStrongPick,
       samePick,
       edgeClass,
       confidenceLevel,
-      eliteEngine: "v1-calibrated"
+      eliteEngine: "v2-model-agreement"
     },
     confidenceMetrics: {
       modelConfidence: Math.round(finalConfidence * 10) / 10,
@@ -1387,10 +1410,12 @@ async function analyze(fixtureId, suppliedMatch = null) {
       status: ai.status || "",
       bestPick: ai.bestPick || statistical.pick,
       confidence: Number(ai.confidence ?? statistical.confidence),
-      suggestedCorrectScore: String(ai.correctScore || "").trim() || "N/A",
-      analysis: ai.analysis || "",
+      suggestedCorrectScore: noStrongPick ? "N/A" : (String(ai.correctScore || "").trim() || "N/A"),
+      analysis: noStrongPick && aiEnabled
+        ? "No Strong Pick: AI and statistical evidence do not justify forcing a 1X2 winner. Avoid treating 1X or X2 as the final recommendation."
+        : (ai.analysis || ""),
       factors: Array.isArray(ai.factors) ? ai.factors : [],
-      risk: ai.risk || ""
+      risk: noStrongPick ? "HIGH — no strong directional edge" : (ai.risk || "")
     },
     dataQuality: quality,
     risk,
