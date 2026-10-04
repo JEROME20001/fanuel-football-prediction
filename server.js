@@ -1155,10 +1155,16 @@ async function analyze(fixtureId, suppliedMatch = null) {
   const statPick = statistical.pick;
   const aiPick = ai.bestPick || statistical.pick;
   const keyForPick = pick => pick === "Home Win" ? "home" : pick === "Draw" ? "draw" : "away";
-  const rawGap = Math.abs(
-    Number(statistical.probabilities[keyForPick(statPick)] || 0) -
-    Number(ai.homeProbability ?? statistical.probabilities.home)
-  ) + 0;
+  const aiRaw = {
+    home: Number(ai.homeProbability ?? statistical.probabilities.home),
+    draw: Number(ai.drawProbability ?? statistical.probabilities.draw),
+    away: Number(ai.awayProbability ?? statistical.probabilities.away)
+  };
+  const rawGap = Math.max(
+    Math.abs(Number(statistical.probabilities.home || 0) - aiRaw.home),
+    Math.abs(Number(statistical.probabilities.draw || 0) - aiRaw.draw),
+    Math.abs(Number(statistical.probabilities.away || 0) - aiRaw.away)
+  );
 
   let statWeight = quality.level === "high" ? 0.55 : quality.level === "medium" ? 0.65 : 0.75;
   if (!aiEnabled) statWeight = 1;
