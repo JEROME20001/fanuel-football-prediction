@@ -961,7 +961,7 @@ Keep analysis concise and factual.`
       status: "AI daily budget reached",
       analysis: "Daily AI limit reached; statistical engine used to protect API credits.",
       bestPick: context.statistical.pick,
-      confidence: Math.min(context.statistical.confidence || 50, 60),
+      confidence: context.statistical.confidence,
       probabilities: context.statistical.probabilities,
       over25: context.statistical.over25,
       btts: context.statistical.btts,
@@ -969,7 +969,7 @@ Keep analysis concise and factual.`
       factors: ["AI daily budget reached", "Statistical model retained", "Credits protected"],
       risk: "AI budget limit",
       dataQuality: context.statistical.dataQuality,
-      ensemble: { agreement:100, modelGap:0 },
+      ensemble: { agreement:null, modelGap:null },
       aiUsage: usage
     };
   }
