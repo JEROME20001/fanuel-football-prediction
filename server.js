@@ -893,7 +893,7 @@ async function runFootballAI(context) {
       btts: context.statistical.btts,
       correctScore: "N/A",
       factors: [],
-      risk: "AI haijawezeshwa", dataQuality: context.statistical.dataQuality, ensemble: { agreement:100, modelGap:0 }
+      risk: "AI haijawezeshwa", dataQuality: context.statistical.dataQuality, ensemble: { agreement:null, modelGap:null, decisionAgreement:null }
     };
   }
 
@@ -951,6 +951,7 @@ Treat prediction as probabilistic, never as certainty.
 Return a balanced analysis based on form, goals, home/away context, team strength and the statistical baseline.
 ${dataWarning}
 If evidence is weak or conflicting, use "No Strong Pick".
+If you choose "No Strong Pick", do not recommend Home Win, Draw, Away Win, 1X, or X2 as the final match-winner recommendation. You may still discuss Over/Under or BTTS separately when supported.
 Keep analysis concise and factual.`
     },
     {
@@ -1155,7 +1156,7 @@ async function analyze(fixtureId, suppliedMatch = null) {
       correctScore: "N/A",
       analysis: "AI haikupatikana; statistical baseline imetumika.",
       factors: [],
-      risk: "AI unavailable", dataQuality: statistical.dataQuality, ensemble: { agreement:100, modelGap:0 }
+      risk: "AI unavailable", dataQuality: statistical.dataQuality, ensemble: { agreement:null, modelGap:null, decisionAgreement:null }
     };
   }
 
@@ -1217,9 +1218,25 @@ async function analyze(fixtureId, suppliedMatch = null) {
   // Do not force a winner when the leading outcome has only a tiny edge.
   // This protects the system from presenting close 1X2 probabilities as
   // confident predictions.
+  // Decision Intelligence Layer:
+// A mathematically leading outcome is not automatically a usable recommendation.
+// The AI is allowed to abstain when the evidence is too close. We respect that
+// abstention when the ensemble is not clearly dominant, instead of forcing a
+// winner just because one probability is numerically highest.
+  const aiAbstains = aiEnabled && aiPick === "No Strong Pick";
+
+  const aiAbstentionGuard =
+    aiAbstains &&
+    (
+      topProbability < 50 ||
+      probabilityMargin < 10 ||
+      distributionDistance > 8
+    );
+
   const noStrongPick =
     probabilityMargin < 5 ||
-    (topProbability < 45 && probabilityMargin < 8);
+    (topProbability < 45 && probabilityMargin < 8) ||
+    aiAbstentionGuard;
 
   const finalPick = noStrongPick ? "No Strong Pick" : rawFinalPick;
   const finalKey = rawFinalKey;
@@ -1313,6 +1330,8 @@ async function analyze(fixtureId, suppliedMatch = null) {
     probabilityMargin < 15 ? -2 :
     0;
 
+  const abstentionPenalty = noStrongPick ? -8 : 0;
+
   const finalConfidence = Math.max(
     35,
     Math.min(
@@ -1321,7 +1340,8 @@ async function analyze(fixtureId, suppliedMatch = null) {
       marginBonus +
       agreementAdjustment +
       dataAdjustment +
-      riskAdjustment
+      riskAdjustment +
+      abstentionPenalty
     )
   );
 
@@ -1342,13 +1362,19 @@ async function analyze(fixtureId, suppliedMatch = null) {
 
   const stability = !aiEnabled
     ? "STATISTICAL ONLY"
-    : !rawPickAgreement
-      ? (distributionDistance <= 8 ? "MODERATE" : "UNSTABLE")
-      : distributionDistance <= 3
-        ? "STABLE"
-        : distributionDistance <= 8
-          ? "MODERATE"
-          : "UNSTABLE";
+    : noStrongPick
+      ? (
+          distributionDistance <= 3 && probabilityMargin < 8
+            ? "ABSTAIN / CLOSE"
+            : "ABSTAIN / UNCERTAIN"
+        )
+      : !rawPickAgreement
+        ? (distributionDistance <= 8 ? "MODERATE" : "UNSTABLE")
+        : distributionDistance <= 3
+          ? "STABLE"
+          : distributionDistance <= 8
+            ? "MODERATE"
+            : "UNSTABLE";
 
   const risk =
     edgeClass === "NO STRONG EDGE" ||
@@ -1392,7 +1418,7 @@ async function analyze(fixtureId, suppliedMatch = null) {
       samePick,
       edgeClass,
       confidenceLevel,
-      eliteEngine: "v2-model-agreement"
+      eliteEngine: "v3-decision-intelligence"
     },
     confidenceMetrics: {
       modelConfidence: Math.round(finalConfidence * 10) / 10,
