@@ -1193,11 +1193,14 @@
         </div>
 
         <div class="stats">
-          <div class="stat"><b>Model Agreement</b><br>${ensemble.agreement != null ? escapeHTML(ensemble.agreement) + "%" : "N/A — AI inactive"}</div>
+          <div class="stat"><b>Model Agreement</b><br>${ensemble.agreement != null ? escapeHTML(ensemble.agreement) + "%" : "N/A — AI inactive"}<br><small>${escapeHTML(ensemble.agreementBand ?? "")}</small></div>
+          <div class="stat"><b>Decision Agreement</b><br>${escapeHTML(ensemble.decisionAgreementLabel ?? "N/A")}<br><small>${ensemble.decisionAgreement != null ? escapeHTML(ensemble.decisionAgreement) + "%" : "N/A"}</small></div>
           <div class="stat"><b>Statistical Weight</b><br>${escapeHTML(ensemble.statisticalWeight ?? "N/A")}%</div>
           <div class="stat"><b>AI Weight</b><br>${escapeHTML(ensemble.aiWeight ?? "N/A")}%</div>
           <div class="stat"><b>Model Gap</b><br>${ensemble.modelGap != null ? escapeHTML(ensemble.modelGap) + "%" : "N/A"}</div>
+          <div class="stat"><b>Distribution Distance</b><br>${ensemble.distributionDistance != null ? escapeHTML(ensemble.distributionDistance) + "%" : "N/A"}</div>
           <div class="stat"><b>Stability</b><br>${escapeHTML(ensemble.stability ?? "N/A")}</div>
+          <div class="stat"><b>Decision Status</b><br>${escapeHTML(prediction.decisionStatus === "NO_STRONG_PICK" ? "NO STRONG PICK" : "PICK AVAILABLE")}</div>
           <div class="stat"><b>Strength Edge</b><br>${escapeHTML(prediction.strength?.edgeTeam ?? "N/A")} ${prediction.strength?.edge != null ? "+" + escapeHTML(prediction.strength.edge) : ""}</div>
         </div>
 
