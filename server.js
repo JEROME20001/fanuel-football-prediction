@@ -189,29 +189,72 @@ async function getFixtures(date) {
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
 
-  const data = await sportScoreRequest(
-    "/api/v1/fixtures/?sport=football&date=" +
-    encodeURIComponent(date) +
-    "&limit=200"
+  // SportScore supports filtering by competition. The general daily endpoint
+  // can be dominated by lower leagues, so we also query major competitions
+  // explicitly and merge the results.
+  const priorityCompetitions = [
+    { slug: "premier-league", label: "Premier League", priority: 100 },
+    { slug: "la-liga", label: "La Liga", priority: 98 },
+    { slug: "serie-a", label: "Serie A", priority: 96 },
+    { slug: "bundesliga", label: "Bundesliga", priority: 94 },
+    { slug: "ligue-1", label: "Ligue 1", priority: 92 },
+    { slug: "uefa-champions-league", label: "UEFA Champions League", priority: 110 },
+    { slug: "uefa-europa-league", label: "UEFA Europa League", priority: 108 },
+    { slug: "uefa-europa-conference-league", label: "UEFA Conference League", priority: 106 },
+    { slug: "eredivisie", label: "Eredivisie", priority: 88 },
+    { slug: "primeira-liga", label: "Primeira Liga", priority: 86 },
+    { slug: "championship", label: "Championship", priority: 82 },
+    { slug: "super-lig", label: "Turkish Super Lig", priority: 80 },
+    { slug: "scottish-premiership", label: "Scottish Premiership", priority: 78 }
+  ];
+
+  const requests = [
+    {
+      name: "all",
+      path: "/api/v1/fixtures/?sport=football&date=" +
+        encodeURIComponent(date) + "&status=upcoming&limit=200",
+      priority: 10
+    },
+    ...priorityCompetitions.map(item => ({
+      name: item.label,
+      path: "/api/v1/fixtures/?sport=football&date=" +
+        encodeURIComponent(date) +
+        "&status=upcoming&competition=" +
+        encodeURIComponent(item.slug) +
+        "&limit=200",
+      priority: item.priority
+    }))
+  ];
+
+  const responses = await Promise.all(
+    requests.map(async request => {
+      try {
+        const data = await sportScoreRequest(request.path);
+        return { request, matches: extractMatches(data) };
+      } catch (err) {
+        console.log("SportScore competition lookup failed:", request.name, err.message);
+        return { request, matches: [] };
+      }
+    })
   );
 
-  const rawMatches = extractMatches(data);
   const seen = new Set();
   const now = Date.now();
+  const allMatches = [];
 
-  const matches = rawMatches
-    .map(normalizeSportScoreMatch)
-    .filter(match => {
+  for (const response of responses) {
+    for (const raw of response.matches) {
+      const match = normalizeSportScoreMatch(raw);
       const key = String(
         match.slug ||
         match.id ||
         (match.name + "|" + (match.starting_at || ""))
-      );
+      ).toLowerCase();
 
-      if (seen.has(key)) return false;
+      if (seen.has(key)) continue;
       seen.add(key);
 
-      if (!match.homeTeam?.name || !match.awayTeam?.name) return false;
+      if (!match.homeTeam?.name || !match.awayTeam?.name) continue;
 
       const rawStatus = match.status;
       const status = String(
@@ -230,38 +273,50 @@ async function getFixtures(date) {
         "halftime","extra time","et","penalties"
       ];
 
-      if (finishedStatuses.some(x => status.includes(x))) return false;
-      if (liveStatuses.some(x => status.includes(x))) return false;
+      if (finishedStatuses.some(x => status.includes(x))) continue;
+      if (liveStatuses.some(x => status.includes(x))) continue;
 
       if (match.starting_at) {
         const kickoff = new Date(match.starting_at).getTime();
-        if (Number.isFinite(kickoff) && kickoff <= now) return false;
+        if (Number.isFinite(kickoff) && kickoff <= now) continue;
       }
 
-      return true;
-    })
-    .sort((a, b) => {
-      const ta = new Date(a.starting_at || 0).getTime();
-      const tb = new Date(b.starting_at || 0).getTime();
-      return ta - tb;
-    });
+      const sourcePriority = responses.find(
+        x => x.matches.some(raw => {
+          const n = normalizeSportScoreMatch(raw);
+          return String(n.slug || n.id || "").toLowerCase() === key;
+        })
+      )?.request?.priority || 10;
+
+      match.fixturePriority = sourcePriority;
+      allMatches.push(match);
+    }
+  }
+
+  // Major competitions first, then kickoff time.
+  allMatches.sort((a, b) => {
+    if ((b.fixturePriority || 0) !== (a.fixturePriority || 0)) {
+      return (b.fixturePriority || 0) - (a.fixturePriority || 0);
+    }
+    return new Date(a.starting_at || 0).getTime() -
+      new Date(b.starting_at || 0).getTime();
+  });
 
   const result = {
     ok: true,
     provider: "SportScore",
     date,
     timezone: "UTC",
-    count: matches.length,
-    matches,
-    message: matches.length
-      ? matches.length + " upcoming matches found."
+    count: allMatches.length,
+    matches: allMatches,
+    message: allMatches.length
+      ? allMatches.length + " upcoming matches found, with major leagues prioritized."
       : "No upcoming matches found for " + date + "."
   };
 
   cacheSet(cacheKey, result, 2);
   return result;
 }
-
 async function getFixture(id) {
   const key = String(id || "").trim();
   if (!key) throw new Error("SportScore fixture ID/slug haipo.");
