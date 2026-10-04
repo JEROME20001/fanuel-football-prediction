@@ -1205,7 +1205,13 @@ async function analyze(fixtureId, suppliedMatch = null) {
   ].sort((a,b) => b[1] - a[1]);
   const finalPick = entries[0][0];
   const finalKey = keyForPick(finalPick);
-  // Conservative comparison of the two probability distributions.
+  const probabilityMargin = entries[0][1] - entries[1][1];
+  const topProbability = entries[0][1];
+
+  const samePick = aiEnabled
+    ? (aiPick === finalPick || (aiPick === "No Strong Pick" && statistical.pick === finalPick))
+    : null;
+
   const probabilityGap = aiEnabled
     ? Math.max(
         Math.abs(Number(statistical.probabilities.home || 0) - Number(aiProb.home || 0)),
@@ -1215,55 +1221,90 @@ async function analyze(fixtureId, suppliedMatch = null) {
     : null;
 
   const modelGap = aiEnabled
-    ? Math.abs(Number(statistical.probabilities[finalKey] || 0) - Number(aiProb[finalKey] || 0))
+    ? Math.abs(
+        Number(statistical.probabilities[finalKey] || 0) -
+        Number(aiProb[finalKey] || 0)
+      )
     : null;
 
-  const samePick = aiEnabled
-    ? (aiPick === finalPick || (aiPick === "No Strong Pick" && statistical.pick === finalPick))
-    : null;
-
-  // Never present identical model outputs as 100% agreement: agreement is
-  // model consistency, not certainty.
+  // Agreement measures model alignment, not certainty.
   const agreement = aiEnabled
-    ? Math.max(0, Math.min(98.5, 96 - (probabilityGap * 2.2) + (samePick ? 2.5 : 0)))
+    ? Math.max(
+        35,
+        Math.min(
+          94,
+          74 + (samePick ? 20 : 0) - (probabilityGap * 1.8)
+        )
+      )
     : null;
 
-  const probabilityMargin = entries[0][1] - entries[1][1];
+  const marginBonus =
+    probabilityMargin >= 35 ? 5 :
+    probabilityMargin >= 25 ? 4 :
+    probabilityMargin >= 18 ? 3 :
+    probabilityMargin >= 12 ? 1 :
+    probabilityMargin >= 7 ? 0 :
+    -3;
 
-  // Model Confidence is intentionally separate from the winning probability.
-  const dataConfidenceBonus =
-    quality.level === "high" ? 8 :
-    quality.level === "medium" ? 3 : -5;
+  const agreementAdjustment = aiEnabled
+    ? Math.max(-4, Math.min(3, (agreement - 75) / 6))
+    : 0;
 
-  const confidenceRaw =
-    45 +
-    Math.min(28, probabilityMargin * 1.45) +
-    (aiEnabled ? Number(agreement || 0) * 0.12 : 0) +
-    dataConfidenceBonus;
+  const dataAdjustment =
+    quality.level === "high" ? 2 :
+    quality.level === "medium" ? -1 :
+    -4;
 
-  const confidenceCap =
-    quality.level === "low" ? 68 :
-    quality.level === "medium" ? 82 : 92;
+  const riskAdjustment =
+    probabilityMargin < 8 ? -4 :
+    probabilityMargin < 15 ? -2 :
+    0;
 
-  const finalConfidence = Math.max(35, Math.min(confidenceCap, confidenceRaw));
+  const finalConfidence = Math.max(
+    35,
+    Math.min(
+      92,
+      topProbability +
+      marginBonus +
+      agreementAdjustment +
+      dataAdjustment +
+      riskAdjustment
+    )
+  );
+
+  const edgeClass =
+    (topProbability >= 70 && probabilityMargin >= 25) ||
+    (topProbability >= 60 && probabilityMargin >= 15)
+      ? "STRONG EDGE"
+      : (topProbability >= 52 && probabilityMargin >= 8)
+        ? "MODERATE EDGE"
+        : "NO STRONG EDGE";
+
+  const confidenceLevel =
+    finalConfidence >= 80 ? "STRONG" :
+    finalConfidence >= 65 ? "MODERATE" :
+    "LOW";
 
   const stability = !aiEnabled
     ? "STATISTICAL ONLY"
-    : probabilityGap < 6
+    : probabilityGap < 5
       ? "STABLE"
-      : probabilityGap <= 14
+      : probabilityGap <= 12
         ? "MODERATE"
         : "UNSTABLE";
 
-  const risk = quality.level === "low" ||
+  const risk =
+    edgeClass === "NO STRONG EDGE" ||
+    quality.level === "low" ||
     probabilityMargin < 8 ||
     (aiEnabled && agreement < 65)
-    ? "HIGH"
-    : quality.level === "medium" ||
-      probabilityMargin < 15 ||
-      (aiEnabled && agreement < 82)
-      ? "MEDIUM"
-      : "LOW";
+      ? "HIGH"
+      : edgeClass === "MODERATE EDGE" ||
+        quality.level === "medium" ||
+        probabilityMargin < 15 ||
+        (aiEnabled && agreement < 82)
+        ? "MEDIUM"
+        : "LOW";
 
   const result = {
     ...statistical,
@@ -1284,12 +1325,18 @@ async function analyze(fixtureId, suppliedMatch = null) {
       probabilityGap: aiEnabled ? Math.round(probabilityGap * 10) / 10 : null,
       stability,
       probabilityMargin: Math.round(probabilityMargin * 10) / 10,
-      samePick
+      samePick,
+      edgeClass,
+      confidenceLevel,
+      eliteEngine: "v1-calibrated"
     },
     confidenceMetrics: {
       modelConfidence: Math.round(finalConfidence * 10) / 10,
       winProbability: Math.round(entries[0][1] * 10) / 10,
-      dataConfidence: quality.level === "high" ? "HIGH" : quality.level === "medium" ? "MEDIUM" : "LOW"
+      dataConfidence: quality.level === "high" ? "HIGH" : quality.level === "medium" ? "MEDIUM" : "LOW",
+      confidenceLevel,
+      edgeClass,
+      probabilityMargin: Math.round(probabilityMargin * 10) / 10
     },
     correctScore: statistical.topScores?.[0]?.score || "N/A",
     ai: {
