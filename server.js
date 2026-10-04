@@ -388,6 +388,101 @@ function fixtureForForm(raw) {
 }
 
 /* =====================================================
+   FINISHED FIXTURE LOOKUP / AUTO SETTLEMENT
+===================================================== */
+
+function normalizeTeamName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function scoreFromRaw(raw) {
+  const homeScore = Number(
+    raw?.home_score ?? raw?.homeScore ??
+    raw?.score?.home ?? raw?.scores?.home ??
+    raw?.home?.score ?? raw?.scores?.full_time?.home
+  );
+  const awayScore = Number(
+    raw?.away_score ?? raw?.awayScore ??
+    raw?.score?.away ?? raw?.scores?.away ??
+    raw?.away?.score ?? raw?.scores?.full_time?.away
+  );
+  return {
+    homeScore,
+    awayScore,
+    valid: Number.isInteger(homeScore) && Number.isInteger(awayScore) &&
+      homeScore >= 0 && awayScore >= 0
+  };
+}
+
+async function findFinishedFixtureForPrediction(prediction) {
+  const wantedId = String(prediction?.fixtureId || "").trim();
+  const wantedHome = normalizeTeamName(prediction?.homeTeam);
+  const wantedAway = normalizeTeamName(prediction?.awayTeam);
+
+  const baseDate = new Date(
+    prediction?.createdAt || prediction?.date || Date.now()
+  );
+
+  if (Number.isNaN(baseDate.getTime())) return null;
+
+  const dates = [];
+  for (const offset of [-1, 0, 1, 2]) {
+    const d = new Date(baseDate.getTime() + offset * 86400000);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+
+  for (const date of [...new Set(dates)]) {
+    try {
+      const data = await sportScoreRequest(
+        "/api/v1/fixtures/?sport=football&date=" +
+        encodeURIComponent(date) + "&limit=200"
+      );
+
+      for (const raw of extractMatches(data)) {
+        const normalized = normalizeSportScoreMatch(raw);
+        const rawId = String(
+          raw?.id || raw?.slug || raw?.match_id || raw?.fixture_id || normalized.id || ""
+        );
+
+        const homeName = normalizeTeamName(normalized.homeTeam?.name);
+        const awayName = normalizeTeamName(normalized.awayTeam?.name);
+
+        const idMatch = wantedId && (
+          rawId === wantedId ||
+          String(normalized.slug || "") === wantedId ||
+          String(normalized.id || "") === wantedId
+        );
+
+        const teamMatch = wantedHome && wantedAway &&
+          homeName === wantedHome && awayName === wantedAway;
+
+        if (!idMatch && !teamMatch) continue;
+
+        const score = scoreFromRaw(raw);
+        if (!score.valid) continue;
+
+        return {
+          fixture: normalized,
+          raw,
+          homeScore: score.homeScore,
+          awayScore: score.awayScore,
+          matchedBy: idMatch ? "fixture-id" : "team-names",
+          date
+        };
+      }
+    } catch (err) {
+      console.log("Finished fixture lookup failed:", date, err.message);
+    }
+  }
+
+  return null;
+}
+
+/* =====================================================
    TEAM FORM
 ===================================================== */
 
@@ -1494,14 +1589,24 @@ async function api(
     const settled=[], skipped=[];
     for(const p of pending){
       try{
-        const fixture=await getFixture(p.fixtureId);
-        const raw=fixture.raw||{};
-        const hs=Number(raw.home_score ?? raw.homeScore ?? raw.score?.home ?? raw.scores?.home ?? raw.home?.score);
-        const as=Number(raw.away_score ?? raw.awayScore ?? raw.score?.away ?? raw.scores?.away ?? raw.away?.score);
-        if(Number.isInteger(hs)&&Number.isInteger(as)){
-          settled.push(saveSettlement(p,p.fixtureId,hs,as,"SportScore-auto"));
+        const found=await findFinishedFixtureForPrediction(p);
+
+        if(found){
+          settled.push(
+            saveSettlement(
+              p,
+              p.fixtureId,
+              found.homeScore,
+              found.awayScore,
+              "SportScore-auto-" + found.matchedBy
+            )
+          );
         } else {
-          skipped.push({fixtureId:p.fixtureId,reason:"Final score not available yet"});
+          skipped.push({
+            fixtureId:p.fixtureId,
+            match:(p.homeTeam || "Home") + " vs " + (p.awayTeam || "Away"),
+            reason:"Final score not found in SportScore historical fixture data yet"
+          });
         }
       }catch(err){
         skipped.push({fixtureId:p.fixtureId,reason:err.message});
@@ -2033,6 +2138,38 @@ const server =
    START SERVER
 ===================================================== */
 
+// Run settlement automatically in the background so performance does not
+// depend on a user opening the dashboard.
+async function runAutomaticSettlement() {
+  try {
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    const pending = [...db.predictions]
+      .filter(p => p.createdAt && new Date(p.createdAt).getTime() < cutoff)
+      .filter(p => !db.results.some(r => String(r.fixtureId) === String(p.fixtureId)))
+      .slice(-50);
+
+    let settled = 0;
+    for (const p of pending) {
+      const found = await findFinishedFixtureForPrediction(p);
+      if (found) {
+        saveSettlement(
+          p,
+          p.fixtureId,
+          found.homeScore,
+          found.awayScore,
+          "SportScore-background-" + found.matchedBy
+        );
+        settled++;
+      }
+    }
+    if (pending.length) {
+      console.log("Automatic settlement:", settled + "/" + pending.length, "predictions settled.");
+    }
+  } catch (err) {
+    console.log("Automatic settlement error:", err.message);
+  }
+}
+
 server.listen(
   PORT,
   () => {
@@ -2063,5 +2200,9 @@ server.listen(
     console.log(
       "======================================"
     );
+
+    // First settlement pass shortly after startup, then every 15 minutes.
+    setTimeout(runAutomaticSettlement, 5000);
+    setInterval(runAutomaticSettlement, 15 * 60 * 1000);
   }
 );
