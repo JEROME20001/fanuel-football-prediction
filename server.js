@@ -1212,12 +1212,24 @@ async function analyze(fixtureId, suppliedMatch = null) {
     ? (aiPick === finalPick || (aiPick === "No Strong Pick" && statistical.pick === finalPick))
     : null;
 
+  // Maximum component gap is useful for stability diagnostics.
   const probabilityGap = aiEnabled
     ? Math.max(
         Math.abs(Number(statistical.probabilities.home || 0) - Number(aiProb.home || 0)),
         Math.abs(Number(statistical.probabilities.draw || 0) - Number(aiProb.draw || 0)),
         Math.abs(Number(statistical.probabilities.away || 0) - Number(aiProb.away || 0))
       )
+    : null;
+
+  // Distribution distance compares the full 1X2 probability shapes.
+  // Half-L1 distance is 0 when models are identical and 100 when they
+  // completely disagree. This prevents Model Agreement from saturating.
+  const distributionDistance = aiEnabled
+    ? (
+        Math.abs(Number(statistical.probabilities.home || 0) - Number(aiProb.home || 0)) +
+        Math.abs(Number(statistical.probabilities.draw || 0) - Number(aiProb.draw || 0)) +
+        Math.abs(Number(statistical.probabilities.away || 0) - Number(aiProb.away || 0))
+      ) / 2
     : null;
 
   const modelGap = aiEnabled
@@ -1227,13 +1239,14 @@ async function analyze(fixtureId, suppliedMatch = null) {
       )
     : null;
 
-  // Agreement measures model alignment, not certainty.
+  // Agreement measures how closely the two probability distributions align,
+  // not how likely the match is to win. It is intentionally dynamic.
   const agreement = aiEnabled
     ? Math.max(
-        35,
+        20,
         Math.min(
-          94,
-          74 + (samePick ? 20 : 0) - (probabilityGap * 1.8)
+          100,
+          100 - distributionDistance
         )
       )
     : null;
