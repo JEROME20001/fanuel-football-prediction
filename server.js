@@ -1203,13 +1203,26 @@ async function analyze(fixtureId, suppliedMatch = null) {
     ["Draw", blended.draw],
     ["Away Win", blended.away]
   ].sort((a,b) => b[1] - a[1]);
-  const finalPick = entries[0][0];
-  const finalKey = keyForPick(finalPick);
+
+  const rawFinalPick = entries[0][0];
+  const rawFinalKey = keyForPick(rawFinalPick);
   const probabilityMargin = entries[0][1] - entries[1][1];
   const topProbability = entries[0][1];
 
+  // Do not force a winner when the leading outcome has only a tiny edge.
+  // This protects the system from presenting close 1X2 probabilities as
+  // confident predictions.
+  const noStrongPick =
+    probabilityMargin < 5 ||
+    (topProbability < 45 && probabilityMargin < 8);
+
+  const finalPick = noStrongPick ? "No Strong Pick" : rawFinalPick;
+  const finalKey = rawFinalKey;
+
   const samePick = aiEnabled
-    ? (aiPick === finalPick || (aiPick === "No Strong Pick" && statistical.pick === finalPick))
+    ? (noStrongPick
+        ? aiPick === "No Strong Pick" || aiPick === rawFinalPick
+        : aiPick === finalPick)
     : null;
 
   // Maximum component gap is useful for stability diagnostics.
@@ -1234,8 +1247,8 @@ async function analyze(fixtureId, suppliedMatch = null) {
 
   const modelGap = aiEnabled
     ? Math.abs(
-        Number(statistical.probabilities[finalKey] || 0) -
-        Number(aiProb[finalKey] || 0)
+        Number(statistical.probabilities[rawFinalKey] || 0) -
+        Number(aiProb[rawFinalKey] || 0)
       )
     : null;
 
@@ -1286,12 +1299,14 @@ async function analyze(fixtureId, suppliedMatch = null) {
   );
 
   const edgeClass =
-    (topProbability >= 70 && probabilityMargin >= 25) ||
-    (topProbability >= 60 && probabilityMargin >= 15)
-      ? "STRONG EDGE"
-      : (topProbability >= 52 && probabilityMargin >= 8)
-        ? "MODERATE EDGE"
-        : "NO STRONG EDGE";
+    noStrongPick
+      ? "NO STRONG EDGE"
+      : (topProbability >= 70 && probabilityMargin >= 25) ||
+        (topProbability >= 60 && probabilityMargin >= 15)
+        ? "STRONG EDGE"
+        : (topProbability >= 52 && probabilityMargin >= 8)
+          ? "MODERATE EDGE"
+          : "NO STRONG EDGE";
 
   const confidenceLevel =
     finalConfidence >= 80 ? "STRONG" :
@@ -1322,6 +1337,7 @@ async function analyze(fixtureId, suppliedMatch = null) {
   const result = {
     ...statistical,
     pick: finalPick,
+    decisionStatus: noStrongPick ? "NO_STRONG_PICK" : "PICK_AVAILABLE",
     confidence: Math.round(finalConfidence * 10) / 10,
     probabilities: {
       home: Math.round(blended.home * 10) / 10,
@@ -1338,6 +1354,7 @@ async function analyze(fixtureId, suppliedMatch = null) {
       probabilityGap: aiEnabled ? Math.round(probabilityGap * 10) / 10 : null,
       stability,
       probabilityMargin: Math.round(probabilityMargin * 10) / 10,
+      noStrongPick,
       samePick,
       edgeClass,
       confidenceLevel,
@@ -1349,9 +1366,10 @@ async function analyze(fixtureId, suppliedMatch = null) {
       dataConfidence: quality.level === "high" ? "HIGH" : quality.level === "medium" ? "MEDIUM" : "LOW",
       confidenceLevel,
       edgeClass,
+      noStrongPick,
       probabilityMargin: Math.round(probabilityMargin * 10) / 10
     },
-    correctScore: statistical.topScores?.[0]?.score || "N/A",
+    correctScore: noStrongPick ? "N/A" : (statistical.topScores?.[0]?.score || "N/A"),
     ai: {
       enabled: Boolean(ai.enabled),
       model: ai.model || null,
