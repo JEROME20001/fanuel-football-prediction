@@ -850,7 +850,13 @@ function predict(fixture,homeForm,awayForm){
     btts:Math.round(p.btts*1000)/10,
     expectedGoals:{home:Math.round(homeLambda*100)/100,away:Math.round(awayLambda*100)/100},
     topScores:topScores(cells,3),
-    strength:{home:homeForm.strengthRating||1500,away:awayForm.strengthRating||1500,gap:Math.round(gap*10)/10},
+    strength:{
+      home:homeForm.strengthRating||1500,
+      away:awayForm.strengthRating||1500,
+      gap:Math.round(gap*10)/10,
+      edge:Math.round(Math.abs(gap)*10)/10,
+      edgeTeam:gap>0 ? fixture.teams.home.name : gap<0 ? fixture.teams.away.name : "Even"
+    },
     form:{home:homeForm,away:awayForm}, model:"Fanuel Statistical Deep Engine", usesOdds:false, createdAt:new Date().toISOString()
   };
 }
@@ -1199,33 +1205,63 @@ async function analyze(fixtureId, suppliedMatch = null) {
   ].sort((a,b) => b[1] - a[1]);
   const finalPick = entries[0][0];
   const finalKey = keyForPick(finalPick);
+  // Conservative comparison of the two probability distributions.
+  const probabilityGap = aiEnabled
+    ? Math.max(
+        Math.abs(Number(statistical.probabilities.home || 0) - Number(aiProb.home || 0)),
+        Math.abs(Number(statistical.probabilities.draw || 0) - Number(aiProb.draw || 0)),
+        Math.abs(Number(statistical.probabilities.away || 0) - Number(aiProb.away || 0))
+      )
+    : null;
+
   const modelGap = aiEnabled
     ? Math.abs(Number(statistical.probabilities[finalKey] || 0) - Number(aiProb[finalKey] || 0))
-    : 0;
-  const samePick = !aiEnabled || aiPick === finalPick || aiPick === "No Strong Pick" && statistical.pick === finalPick;
+    : null;
+
+  const samePick = aiEnabled
+    ? (aiPick === finalPick || (aiPick === "No Strong Pick" && statistical.pick === finalPick))
+    : null;
+
+  // Never present identical model outputs as 100% agreement: agreement is
+  // model consistency, not certainty.
   const agreement = aiEnabled
-    ? (samePick
-        ? 70 + 30 * Math.max(0, 1 - modelGap / 20)
-        : Math.max(0, 50 - modelGap * 1.5))
-    : 55;
+    ? Math.max(0, Math.min(98.5, 96 - (probabilityGap * 2.2) + (samePick ? 2.5 : 0)))
+    : null;
+
   const probabilityMargin = entries[0][1] - entries[1][1];
+
+  // Model Confidence is intentionally separate from the winning probability.
+  const dataConfidenceBonus =
+    quality.level === "high" ? 8 :
+    quality.level === "medium" ? 3 : -5;
+
+  const confidenceRaw =
+    45 +
+    Math.min(28, probabilityMargin * 1.45) +
+    (aiEnabled ? Number(agreement || 0) * 0.12 : 0) +
+    dataConfidenceBonus;
+
   const confidenceCap =
-    quality.level === "low" ? 62 :
-    quality.level === "medium" ? 75 :
-    agreement < 60 ? 68 :
-    agreement < 80 ? 76 : 82;
-  const confidencePenalty =
-    (probabilityMargin < 8 ? 8 : probabilityMargin < 15 ? 4 : 0) +
-    (modelGap >= 20 ? 8 : modelGap >= 12 ? 4 : 0);
-  const baseConfidence = entries[0][1];
-  const finalConfidence = Math.max(
-    35,
-    Math.min(confidenceCap, baseConfidence - confidencePenalty)
-  );
-  const stability = modelGap < 8 ? "STABLE" : modelGap <= 18 ? "MODERATE" : "UNSTABLE";
-  const risk = quality.level === "low" || agreement < 60 || probabilityMargin < 8
+    quality.level === "low" ? 68 :
+    quality.level === "medium" ? 82 : 92;
+
+  const finalConfidence = Math.max(35, Math.min(confidenceCap, confidenceRaw));
+
+  const stability = !aiEnabled
+    ? "STATISTICAL ONLY"
+    : probabilityGap < 6
+      ? "STABLE"
+      : probabilityGap <= 14
+        ? "MODERATE"
+        : "UNSTABLE";
+
+  const risk = quality.level === "low" ||
+    probabilityMargin < 8 ||
+    (aiEnabled && agreement < 65)
     ? "HIGH"
-    : quality.level === "medium" || agreement < 80 || probabilityMargin < 15
+    : quality.level === "medium" ||
+      probabilityMargin < 15 ||
+      (aiEnabled && agreement < 82)
       ? "MEDIUM"
       : "LOW";
 
@@ -1243,33 +1279,26 @@ async function analyze(fixtureId, suppliedMatch = null) {
     ensemble: {
       statisticalWeight: Math.round(statWeight * 100),
       aiWeight: Math.round(aiWeight * 100),
-      agreement: Math.round(agreement * 10) / 10,
-      modelGap: Math.round(modelGap * 10) / 10,
+      agreement: aiEnabled ? Math.round(agreement * 10) / 10 : null,
+      modelGap: aiEnabled ? Math.round(modelGap * 10) / 10 : null,
+      probabilityGap: aiEnabled ? Math.round(probabilityGap * 10) / 10 : null,
       stability,
       probabilityMargin: Math.round(probabilityMargin * 10) / 10,
       samePick
     },
+    confidenceMetrics: {
+      modelConfidence: Math.round(finalConfidence * 10) / 10,
+      winProbability: Math.round(entries[0][1] * 10) / 10,
+      dataConfidence: quality.level === "high" ? "HIGH" : quality.level === "medium" ? "MEDIUM" : "LOW"
+    },
+    correctScore: statistical.topScores?.[0]?.score || "N/A",
     ai: {
       enabled: Boolean(ai.enabled),
-      model: ai.model || OPENAI_MODEL,
+      model: ai.model || null,
       status: ai.status || "",
       bestPick: ai.bestPick || statistical.pick,
       confidence: Number(ai.confidence ?? statistical.confidence),
-      correctScore: (() => {
-        const candidate = String(ai.correctScore || "").trim();
-        const valid = /^\d+-\d+$/.test(candidate);
-        const parts = valid ? candidate.split("-").map(Number) : [];
-        const candidatePick = valid
-          ? (parts[0] > parts[1] ? "Home Win" : parts[0] < parts[1] ? "Away Win" : "Draw")
-          : "";
-        if (valid && candidatePick === finalPick) return candidate;
-        const aligned = (statistical.topScores || []).find(item => {
-          const p = String(item.score || "").split("-").map(Number);
-          if (p.length !== 2 || p.some(Number.isNaN)) return false;
-          return p[0] > p[1] ? finalPick === "Home Win" : p[0] < p[1] ? finalPick === "Away Win" : finalPick === "Draw";
-        });
-        return aligned?.score || statistical.topScores?.[0]?.score || candidate || "N/A";
-      })(),
+      suggestedCorrectScore: String(ai.correctScore || "").trim() || "N/A",
       analysis: ai.analysis || "",
       factors: Array.isArray(ai.factors) ? ai.factors : [],
       risk: ai.risk || ""
