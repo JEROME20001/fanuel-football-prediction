@@ -1252,14 +1252,22 @@ async function analyze(fixtureId, suppliedMatch = null) {
       )
     : null;
 
-  // Agreement measures how closely the two probability distributions align,
-  // not how likely the match is to win. It is intentionally dynamic.
+  // Model Agreement measures actual AI-vs-statistical alignment.
+  // A 1X2 distribution difference of 1 point should be visible instead of
+  // being rounded away at 99-100%. If the models choose different outcomes,
+  // apply an additional directional disagreement penalty.
+  const rawPickAgreement = aiEnabled
+    ? aiPick === rawFinalPick
+    : null;
+
   const agreement = aiEnabled
     ? Math.max(
         20,
         Math.min(
           100,
-          100 - distributionDistance
+          100 -
+          (distributionDistance * 2.5) -
+          (rawPickAgreement ? 0 : 15)
         )
       )
     : null;
@@ -1315,11 +1323,13 @@ async function analyze(fixtureId, suppliedMatch = null) {
 
   const stability = !aiEnabled
     ? "STATISTICAL ONLY"
-    : probabilityGap < 5
-      ? "STABLE"
-      : probabilityGap <= 12
-        ? "MODERATE"
-        : "UNSTABLE";
+    : !rawPickAgreement
+      ? (distributionDistance <= 12 ? "MODERATE" : "UNSTABLE")
+      : distributionDistance <= 4
+        ? "STABLE"
+        : distributionDistance <= 10
+          ? "MODERATE"
+          : "UNSTABLE";
 
   const risk =
     edgeClass === "NO STRONG EDGE" ||
@@ -1338,6 +1348,7 @@ async function analyze(fixtureId, suppliedMatch = null) {
     ...statistical,
     pick: finalPick,
     decisionStatus: noStrongPick ? "NO_STRONG_PICK" : "PICK_AVAILABLE",
+    doubleChance: noStrongPick ? "N/A" : statistical.doubleChance,
     confidence: Math.round(finalConfidence * 10) / 10,
     probabilities: {
       home: Math.round(blended.home * 10) / 10,
@@ -1467,7 +1478,11 @@ function settlementMetrics(prediction, homeScore, awayScore) {
     actualOver25,
     actualBTTS,
     actualScore,
-    correct: prediction?.pick === actualPick,
+    // "No Strong Pick" is deliberately not scored as a win/loss.
+    // It represents a disciplined abstention when the outcome is too close.
+    correct: prediction?.pick === "No Strong Pick"
+      ? null
+      : prediction?.pick === actualPick,
     over25Correct: Number(prediction?.over25 || 0) >= 50 ? actualOver25 : !actualOver25,
     bttsCorrect: Number(prediction?.btts || 0) >= 50 ? actualBTTS : !actualBTTS,
     correctScore: predictedScore === actualScore
@@ -1500,9 +1515,14 @@ function saveSettlement(prediction, fixtureId, homeScore, awayScore, source="Spo
 }
 
 function settlementRows() {
+  // Performance metrics should evaluate only predictions where the engine
+  // actually made a directional pick. Abstentions are kept in history but
+  // excluded from win/loss accuracy and calibration.
   return (db.results || []).map(result => {
     const prediction = findPrediction(result.fixtureId);
-    return prediction ? { prediction, result } : null;
+    if (!prediction) return null;
+    if (prediction.pick === "No Strong Pick") return null;
+    return { prediction, result };
   }).filter(Boolean);
 }
 
@@ -2112,7 +2132,7 @@ async function api(
     const rows = settlementRows();
     let correct=0, brier=0, logLoss=0, over25Correct=0, bttsCorrect=0, exactScore=0;
     for (const row of rows) {
-      if (row.result.correct) correct++;
+      if (row.result.correct === true) correct++;
       if (row.result.over25Correct) over25Correct++;
       if (row.result.bttsCorrect) bttsCorrect++;
       if (row.result.correctScore) exactScore++;
