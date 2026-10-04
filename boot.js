@@ -32,8 +32,6 @@ const replacement = `  // Elite Confidence Engine:
       )
     : null;
 
-  const finalKey = keyForPick(finalPick);
-
   const modelGap = aiEnabled
     ? Math.abs(
         Number(statistical.probabilities[finalKey] || 0) -
