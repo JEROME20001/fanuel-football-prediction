@@ -184,6 +184,47 @@ function normalizeSportScoreMatch(match) {
   };
 }
 
+function fixturePriorityScore(match) {
+  const league = String(match?.league?.name || "").toLowerCase();
+  const text = String(
+    (match?.homeTeam?.name || "") + " " +
+    (match?.awayTeam?.name || "") + " " + league
+  ).toLowerCase();
+
+  const majorCompetitions = [
+    ["champions league",110],["uefa champions",110],
+    ["europa league",108],["conference league",106],
+    ["premier league",100],["la liga",98],["serie a",96],
+    ["bundesliga",94],["ligue 1",92],["eredivisie",88],
+    ["primeira liga",86],["championship",82],["super lig",80],
+    ["scottish premiership",78],["mls",76],["brasileirao",76],
+    ["serie a brazil",76],["liga profesional",74]
+  ];
+
+  let score = 10;
+  for (const [keyword, value] of majorCompetitions) {
+    if (league.includes(keyword)) score = Math.max(score, value);
+  }
+
+  const majorTeams = [
+    "arsenal","liverpool","manchester city","manchester united","chelsea","tottenham",
+    "newcastle","real madrid","barcelona","atletico madrid","sevilla","athletic bilbao",
+    "juventus","inter milan","ac milan","napoli","roma","lazio",
+    "bayern munich","borussia dortmund","rb leipzig","bayer leverkusen",
+    "psg","paris saint germain","marseille","lyon","monaco",
+    "ajax","psv","feyenoord","benfica","porto","sporting cp",
+    "galatasaray","fenerbahce","besiktas","celtic","rangers"
+  ];
+  const matchedTeams = majorTeams.filter(team => text.includes(team)).length;
+  score += Math.min(18, matchedTeams * 9);
+
+  if (/\b(u19|u20|u21|u23|b team|reserve|reserves)\b/i.test(text)) score -= 25;
+  if (/\b(women|woman|womens|female)\b/i.test(text)) score -= 8;
+  if (/\b(2\. divisjon|3\. divisjon|division 2|division 1|second league|third league|regional)\b/i.test(text)) score -= 12;
+
+  return Math.max(0, score);
+}
+
 async function getFixtures(date) {
   const cacheKey = "fixtures:" + date;
   const cached = cacheGet(cacheKey);
@@ -1110,7 +1151,19 @@ async function analyze(fixtureId, suppliedMatch = null) {
   // Deep ensemble: never let the LLM overwrite the statistical model blindly.
   // Blend the two probability signals, then derive the final pick from the blend.
   const quality = statistical.dataQuality || dataQuality(homeForm, awayForm);
-  const statWeight = quality.level === "high" ? 0.55 : quality.level === "medium" ? 0.65 : 0.75;
+  const aiEnabled = Boolean(ai.enabled);
+  const statPick = statistical.pick;
+  const aiPick = ai.bestPick || statistical.pick;
+  const keyForPick = pick => pick === "Home Win" ? "home" : pick === "Draw" ? "draw" : "away";
+  const rawGap = Math.abs(
+    Number(statistical.probabilities[keyForPick(statPick)] || 0) -
+    Number(ai.homeProbability ?? statistical.probabilities.home)
+  ) + 0;
+
+  let statWeight = quality.level === "high" ? 0.55 : quality.level === "medium" ? 0.65 : 0.75;
+  if (!aiEnabled) statWeight = 1;
+  if (aiEnabled && rawGap >= 18) statWeight = Math.min(0.90, statWeight + 0.10);
+  if (aiEnabled && rawGap >= 28) statWeight = Math.min(0.95, statWeight + 0.05);
   const aiWeight = 1 - statWeight;
   const aiProb = {
     home: Number(ai.homeProbability ?? statistical.probabilities.home),
@@ -1139,13 +1192,36 @@ async function analyze(fixtureId, suppliedMatch = null) {
     ["Away Win", blended.away]
   ].sort((a,b) => b[1] - a[1]);
   const finalPick = entries[0][0];
-  const modelGap = Math.abs(statistical.probabilities[finalPick === "Home Win" ? "home" : finalPick === "Draw" ? "draw" : "away"] - aiProb[finalPick === "Home Win" ? "home" : finalPick === "Draw" ? "draw" : "away"]);
-  const agreement = Math.max(0, Math.min(100, 100 - modelGap));
+  const finalKey = keyForPick(finalPick);
+  const modelGap = aiEnabled
+    ? Math.abs(Number(statistical.probabilities[finalKey] || 0) - Number(aiProb[finalKey] || 0))
+    : 0;
+  const samePick = !aiEnabled || aiPick === finalPick || aiPick === "No Strong Pick" && statistical.pick === finalPick;
+  const agreement = aiEnabled
+    ? (samePick
+        ? 70 + 30 * Math.max(0, 1 - modelGap / 20)
+        : Math.max(0, 50 - modelGap * 1.5))
+    : 55;
+  const probabilityMargin = entries[0][1] - entries[1][1];
+  const confidenceCap =
+    quality.level === "low" ? 62 :
+    quality.level === "medium" ? 75 :
+    agreement < 60 ? 68 :
+    agreement < 80 ? 76 : 82;
+  const confidencePenalty =
+    (probabilityMargin < 8 ? 8 : probabilityMargin < 15 ? 4 : 0) +
+    (modelGap >= 20 ? 8 : modelGap >= 12 ? 4 : 0);
   const baseConfidence = entries[0][1];
-  const stability = modelGap < 10 ? "STABLE" : modelGap <= 20 ? "MODERATE" : "UNSTABLE";
-  const confidenceCap = stability === "UNSTABLE" ? 70 : stability === "MODERATE" ? 78 : 85;
-  const finalConfidence = quality.level === "low" ? Math.min(baseConfidence, 60) : Math.min(baseConfidence, confidenceCap);
-  const risk = quality.level === "low" || agreement < 60 ? "HIGH" : quality.level === "medium" || agreement < 80 ? "MEDIUM" : "LOW";
+  const finalConfidence = Math.max(
+    35,
+    Math.min(confidenceCap, baseConfidence - confidencePenalty)
+  );
+  const stability = modelGap < 8 ? "STABLE" : modelGap <= 18 ? "MODERATE" : "UNSTABLE";
+  const risk = quality.level === "low" || agreement < 60 || probabilityMargin < 8
+    ? "HIGH"
+    : quality.level === "medium" || agreement < 80 || probabilityMargin < 15
+      ? "MEDIUM"
+      : "LOW";
 
   const result = {
     ...statistical,
@@ -1163,7 +1239,9 @@ async function analyze(fixtureId, suppliedMatch = null) {
       aiWeight: Math.round(aiWeight * 100),
       agreement: Math.round(agreement * 10) / 10,
       modelGap: Math.round(modelGap * 10) / 10,
-      stability
+      stability,
+      probabilityMargin: Math.round(probabilityMargin * 10) / 10,
+      samePick
     },
     ai: {
       enabled: Boolean(ai.enabled),
@@ -1171,7 +1249,21 @@ async function analyze(fixtureId, suppliedMatch = null) {
       status: ai.status || "",
       bestPick: ai.bestPick || statistical.pick,
       confidence: Number(ai.confidence ?? statistical.confidence),
-      correctScore: ai.correctScore || "N/A",
+      correctScore: (() => {
+        const candidate = String(ai.correctScore || "").trim();
+        const valid = /^\d+-\d+$/.test(candidate);
+        const parts = valid ? candidate.split("-").map(Number) : [];
+        const candidatePick = valid
+          ? (parts[0] > parts[1] ? "Home Win" : parts[0] < parts[1] ? "Away Win" : "Draw")
+          : "";
+        if (valid && candidatePick === finalPick) return candidate;
+        const aligned = (statistical.topScores || []).find(item => {
+          const p = String(item.score || "").split("-").map(Number);
+          if (p.length !== 2 || p.some(Number.isNaN)) return false;
+          return p[0] > p[1] ? finalPick === "Home Win" : p[0] < p[1] ? finalPick === "Away Win" : finalPick === "Draw";
+        });
+        return aligned?.score || statistical.topScores?.[0]?.score || candidate || "N/A";
+      })(),
       analysis: ai.analysis || "",
       factors: Array.isArray(ai.factors) ? ai.factors : [],
       risk: ai.risk || ""
@@ -1189,7 +1281,9 @@ async function analyze(fixtureId, suppliedMatch = null) {
     probabilities: { ...result.probabilities },
     over25: result.over25,
     btts: result.btts,
-    confidence: result.confidence
+    confidence: result.confidence,
+    fixturePriority: Number(fixture.fixturePriority || 0),
+    league: fixture.league || null
   };
 
   db.predictions.push(result);
@@ -1702,7 +1796,17 @@ async function api(
           if (Number.isFinite(kickoff) && kickoff <= now) return false;
           return true;
         })
+        .map(match => ({
+          ...match,
+          fixturePriority: Math.max(
+            Number(match.fixturePriority || 0),
+            fixturePriorityScore(match)
+          )
+        }))
         .sort((a, b) => {
+          const pa = Number(a.fixturePriority || 0);
+          const pb = Number(b.fixturePriority || 0);
+          if (pb !== pa) return pb - pa;
           const ta = new Date(a.starting_at || 0).getTime();
           const tb = new Date(b.starting_at || 0).getTime();
           return ta - tb;
