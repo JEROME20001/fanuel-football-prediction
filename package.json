@@ -4,7 +4,7 @@
   "description": "AI-assisted football prediction system using live and historical match data.",
   "main": "server.js",
   "scripts": {
-    "start": "node boot.js"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=18"
