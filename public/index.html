@@ -307,8 +307,8 @@
 <body>
 
 <header>
-  <h1>⚽ Fanuel Football Prediction</h1>
-  <p>AI Deep Analysis • Statistical Engine • Historical Performance</p>
+  <h1>👑 Fanuel Football Prediction — VVIP ONLY</h1>
+  <p>AI Deep Analysis • VVIP Selection • Historical Performance</p>
   <div id="systemStatus" style="margin-top:12px;font-size:13px;color:#c7e3ff;">Checking system status...</div>
 </header>
 
@@ -352,13 +352,13 @@
 
     <div class="matches-header">
 
-      <h2>⚽ Available Matches</h2>
+      <h2>👑 VVIP Picks Only</h2>
 
       <div
         id="matchCount"
         class="count"
       >
-        0 matches
+        0 VVIP picks
       </div>
 
     </div>
@@ -561,7 +561,7 @@
     container.innerHTML = `
       <div class="empty">
         <span class="spinner"></span>
-        Loading all available matches...
+        Scanning top fixtures for strict VVIP criteria...
       </div>
     `;
 
@@ -637,7 +637,7 @@
       */
 
       count.textContent =
-        `${matches.length} match${matches.length === 1 ? "" : "es"}`;
+        `${matches.length} VVIP candidate${matches.length === 1 ? "" : "s"}`;
 
       if (!matches.length) {
 
@@ -657,14 +657,14 @@
       }
 
       showStatus(
-        `Successfully loaded ${matches.length} football matches.`,
+        `🧠 Screening ${matches.length} candidate matches for VVIP picks...`,
         "success"
       );
 
       container.innerHTML = "";
 
       /*
-        Display EVERY match returned by server.
+        Only VVIP-qualified matches are shown. Non-VVIP matches stay hidden.
       */
 
       matches.forEach(
@@ -852,18 +852,22 @@
         throw new Error("No prediction was returned.");
       }
 
+      const vvip = data.prediction.vvip || {};
+      if (!vvip.eligible) {
+        predictionBox.closest(".match")?.remove();
+        return {eligible:false};
+      }
+
+      predictionBox.closest(".match")?.style && (predictionBox.closest(".match").style.display = "block");
       displayPrediction(predictionBox, data.prediction);
       loadPredictionHistory();
       loadPerformance();
+      return {eligible:true};
 
     } catch (error) {
       console.error("Automatic analysis error:", error);
-      predictionBox.innerHTML = `
-        <div class="prediction">
-          ❌ Automatic prediction failed:
-          ${escapeHTML(error.message)}
-        </div>
-      `;
+      predictionBox.closest(".match")?.remove();
+      return {eligible:false,error:error.message};
     }
   }
 
@@ -872,10 +876,11 @@
     const total = matches.length;
     const concurrency = Math.min(4, total);
     let completed = 0;
+    let vvipCount = 0;
     let nextIndex = 0;
 
     showStatus(
-      "🧠 Automatic AI analysis started: 0/" + total + " matches completed. Running up to " + concurrency + " analyses at once.",
+      "🧠 VVIP screening started: 0/" + total + " candidates checked. Only qualifying games will be published.",
       "success"
     );
 
@@ -884,11 +889,12 @@
         const index = nextIndex++;
         if (index >= total) return;
 
-        await analyzeMatch(matches[index], index);
+        const outcome = await analyzeMatch(matches[index], index);
+        if (outcome?.eligible) vvipCount++;
         completed++;
 
         showStatus(
-          "🧠 Automatic AI analysis: " + completed + "/" + total + " matches completed.",
+          "🧠 VVIP screening: " + completed + "/" + total + " checked • " + vvipCount + " VVIP picks found.",
           completed === total ? "success" : ""
         );
       }
@@ -898,9 +904,14 @@
       Array.from({length: concurrency}, () => worker())
     );
 
+    const count = document.getElementById("matchCount");
+    count.textContent = vvipCount + " VVIP pick" + (vvipCount === 1 ? "" : "s");
+
     showStatus(
-      "✅ Automatic AI analysis completed: " + completed + "/" + total + " matches.",
-      "success"
+      vvipCount
+        ? "👑 VVIP screening completed: " + vvipCount + " strict VVIP pick" + (vvipCount === 1 ? "" : "s") + " published. Other matches were rejected."
+        : "🛑 No VVIP match qualified today. The system rejected all candidates instead of forcing predictions.",
+      vvipCount ? "success" : "error"
     );
 
     loadSystemStatus();
@@ -989,9 +1000,13 @@
       <div class="prediction">
 
         <h3>
-          🧠 AI Deep Prediction
-          ${prediction.ai?.enabled ? '<span class="ai-badge">OPENAI ACTIVE</span>' : '<span class="ai-badge">STATISTICAL FALLBACK</span>'}
+          👑 VVIP AI Deep Prediction
+          <span class="ai-badge">VVIP QUALIFIED</span>
         </h3>
+
+        <div class="status success" style="margin-top:10px;">
+          <b>👑 VVIP PICK</b> • Strict gate passed • Score: ${escapeHTML(prediction.vvip?.score ?? "N/A")}/100
+        </div>
 
         <div class="pick">
           ${escapeHTML(
