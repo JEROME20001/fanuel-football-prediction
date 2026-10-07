@@ -345,7 +345,7 @@ function buildFinal(statistical, ai, historyRows = []) {
     expectedGoals: statistical.expectedGoals,
     topScores: statistical.topScores,
     correctScore: e.decisionStatus === "NO_STRONG_PICK" ? "N/A" : statistical.topScores?.[0]?.score || "N/A",
-    vvip: vvipSelection({ ...statistical, ...e }, ai),
+    vip: vipSelection({ ...statistical, ...e }, ai),
     confidenceMetrics: {
       modelConfidence: e.confidence,
       winProbability: Math.max(e.probabilities.home, e.probabilities.draw, e.probabilities.away),
@@ -360,7 +360,7 @@ function buildFinal(statistical, ai, historyRows = []) {
   return final;
 }
 
-function vvipSelection(prediction, ai) {
+function vipSelection(prediction, ai) {
   const probs = prediction?.probabilities || {};
   const home = Number(probs.home || 0);
   const drawProb = Number(probs.draw || 0);
@@ -402,10 +402,10 @@ function vvipSelection(prediction, ai) {
     margin: round(margin, 1),
     eligible:
       aiActive && highData && sampleOK && venueSampleOK &&
-      Number(prediction?.confidence || 0) >= 80 &&
-      topProbability >= 60 && margin >= 18 &&
-      agreement >= 92 && aiPick === topPick &&
-      distance <= 5 && stable,
+      Number(prediction?.confidence || 0) >= 65 &&
+      topProbability >= 55 && margin >= 10 &&
+      agreement >= 85 && aiPick === topPick &&
+      distance <= 8 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
     criteria: {
       aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
       confidenceMin80: Number(prediction?.confidence || 0) >= 80,
@@ -426,9 +426,9 @@ function vvipSelection(prediction, ai) {
     margin: round(drawEdge, 1),
     eligible:
       aiActive && highData && sampleOK && venueSampleOK &&
-      drawProb >= 38 && drawEdge >= 8 &&
-      aiPick === "Draw" && agreement >= 92 &&
-      distance <= 5 && stable,
+      drawProb >= 33 && drawEdge >= 5 &&
+      aiPick === "Draw" && agreement >= 85 &&
+      distance <= 8 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
     criteria: {
       aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
       probabilityMin38: drawProb >= 38,
@@ -456,9 +456,9 @@ function vvipSelection(prediction, ai) {
     modelDistance: round(bttsDistance, 1),
     eligible:
       aiActive && highData && sampleOK && venueSampleOK &&
-      bttsConfidence >= 65 && bttsEdge >= 15 &&
-      aiBttsPick === bttsPick && bttsDistance <= 5 &&
-      agreement >= 92 && stable,
+      bttsConfidence >= 60 && bttsEdge >= 10 &&
+      aiBttsPick === bttsPick && bttsDistance <= 8 &&
+      agreement >= 85 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
     criteria: {
       aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
       confidenceMin65: bttsConfidence >= 65,
@@ -486,7 +486,7 @@ function vvipSelection(prediction, ai) {
 
   return {
     eligible: eligibleWithScores.length > 0,
-    tier: eligibleWithScores.length ? "VVIP" : "REJECTED",
+    tier: eligibleWithScores.length ? "VIP" : "REJECTED",
     primaryMarket: best?.market || null,
     primaryPick: best?.pick || null,
     score: best?.score || 0,
@@ -512,5 +512,6 @@ module.exports = {
   probabilitiesFromMatrix,
   topScores,
   dataQuality,
-  vvipSelection
+  vipSelection,
+  vvipSelection: vipSelection
 };
