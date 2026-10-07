@@ -101,12 +101,55 @@ function normalizeMatch(match) {
   };
 }
 function fixturePriorityScore(match) {
-  const text = `${match?.homeTeam?.name || ""} ${match?.awayTeam?.name || ""} ${match?.league?.name || ""}`.toLowerCase();
-  const major = [["champions league",110],["europa league",108],["conference league",106],["premier league",100],["la liga",98],["serie a",96],["bundesliga",94],["ligue 1",92],["eredivisie",88],["primeira liga",86],["championship",82],["super lig",80],["mls",76],["brasileirao",76]];
+  const text = String(`${match?.homeTeam?.name || ""} ${match?.awayTeam?.name || ""} ${match?.league?.name || ""}`).toLowerCase();
+  const major = [
+    ["champions league",140],["europa league",135],["conference league",130],
+    ["premier league",125],["la liga",122],["serie a",120],["bundesliga",118],["ligue 1",116],
+    ["eredivisie",110],["primeira liga",108],["championship",100],["super lig",96],["mls",92],["brasileirao",92]
+  ];
   let score = 10;
   for (const [k,v] of major) if (text.includes(k)) score = Math.max(score, v);
-  if (/\b(u19|u20|u21|u23|women|womens|reserve|reserves)\b/i.test(text)) score -= 20;
+  if (/\b(u17|u18|u19|u20|u21|u23|women|womens|reserve|reserves)\b/i.test(text)) score -= 30;
   return Math.max(0, score);
+}
+function isBigLeague(match) {
+  const text = String(match?.league?.name || "").toLowerCase();
+  return [
+    "champions league","europa league","conference league","premier league",
+    "la liga","serie a","bundesliga","ligue 1","eredivisie","primeira liga",
+    "championship","super lig","mls","brasileirao"
+  ].some(k => text.includes(k));
+}
+function addDays(dateString, days) {
+  const d = new Date(dateString + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0,10);
+}
+async function getFixturesWindow(startDate, days = 7) {
+  const all = [];
+  const seen = new Set();
+  for (let offset = 0; offset < days; offset++) {
+    const date = addDays(startDate, offset);
+    try {
+      const result = await getFixtures(date);
+      for (const match of result.matches || []) {
+        const key = String(match.slug || match.id || (match.name + "|" + match.starting_at)).toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        match.bigLeague = isBigLeague(match);
+        match.windowDate = date;
+        all.push(match);
+      }
+    } catch (e) {
+      console.log("Fixture window lookup failed:", date, e.message);
+    }
+  }
+  all.sort((a,b) =>
+    Number(b.bigLeague) - Number(a.bigLeague) ||
+    (b.fixturePriority-a.fixturePriority) ||
+    (new Date(a.starting_at||0)-new Date(b.starting_at||0))
+  );
+  return all;
 }
 async function getFixtures(date) {
   const key = "fixtures:" + date;
@@ -279,8 +322,16 @@ async function api(req,res,url){
   if(url.pathname==="/api/ai-health")return sendJSON(res,200,{ok:true,configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,message:OPENAI_API_KEY?"OpenAI football AI is configured.":"OPENAI_API_KEY haijawekwa kwenye Render."});
   if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.filter(p=>p.vvip?.eligible===true).length,storedTotal:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.filter(p=>p.vvip?.eligible===true).length-rows.length)},calibrationReady:rows.length>=10,vvipOnly:true,vvipCandidates:VVIP_CANDIDATES,vvipCriteria:{markets:["1X2","DRAW","BTTS"],aiActive:true,dataQuality:"HIGH",oneXTwo:{confidenceMin:80,topProbabilityMin:60,marginMin:18,agreementMin:92,distributionDistanceMax:5,stability:"STABLE"},draw:{probabilityMin:38,drawEdgeMin:8,agreementMin:92,distributionDistanceMax:5,stability:"STABLE"},btts:{confidenceMin:65,edgeMin:15,modelDistanceMax:5,agreementMin:92,stability:"STABLE"}},engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","VVIP gate","correct-score distribution"],oddsUsed:false});}
   if(url.pathname==="/api/upcoming"){
-    const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return sendJSON(res,400,{ok:false,error:"Tumia date ya YYYY-MM-DD"});
-    try{const result=await getFixtures(date);const matches=result.matches.slice(0,VVIP_CANDIDATES);return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,dailyLimit:150,vvipOnly:true,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} VVIP candidate matches selected for ${date}.`});}catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
+    const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);
+    const days=Math.max(1,Math.min(7,Number(url.searchParams.get("days")||7)));
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return sendJSON(res,400,{ok:false,error:"Tumia date ya YYYY-MM-DD"});
+    try{
+      const windowMatches=await getFixturesWindow(date,days);
+      const matches=windowMatches.slice(0,VVIP_CANDIDATES);
+      const bigLeagueCount=matches.filter(m=>m.bigLeague).length;
+      const toDate=addDays(date,days-1);
+      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:true,priorityMode:"BIG_LEAGUES_FIRST",bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} VVIP candidate matches from ${date} through ${toDate}, with big leagues prioritized.`});
+    }catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
   }
   if(url.pathname==="/api/sportscore-test"||url.pathname==="/api/test"){
     const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);try{const r=await getFixtures(date);return sendJSON(res,200,{ok:true,provider:"SportScore",date,count:r.matches.length,matches:r.matches.slice(0,10),message:"SportScore API inafanya kazi."});}catch(e){return sendJSON(res,502,{ok:false,provider:"SportScore",error:e.message});}
