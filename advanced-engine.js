@@ -362,48 +362,145 @@ function buildFinal(statistical, ai, historyRows = []) {
 
 function vvipSelection(prediction, ai) {
   const probs = prediction?.probabilities || {};
-  const values = [Number(probs.home || 0), Number(probs.draw || 0), Number(probs.away || 0)].sort((a,b)=>b-a);
-  const topProbability = values[0] || 0;
-  const secondProbability = values[1] || 0;
+  const home = Number(probs.home || 0);
+  const drawProb = Number(probs.draw || 0);
+  const away = Number(probs.away || 0);
+
+  const statBtts = clamp(Number(prediction?.btts || 0), 0, 100);
+  const aiBtts = clamp(Number(ai?.bttsProbability ?? statBtts), 0, 100);
+  const bttsDistance = Math.abs(statBtts - aiBtts);
+
+  const values = [
+    ["Home Win", home],
+    ["Draw", drawProb],
+    ["Away Win", away]
+  ].sort((a,b)=>b[1]-a[1]);
+
+  const topPick = values[0][0];
+  const topProbability = values[0][1];
+  const secondProbability = values[1][1];
   const margin = topProbability - secondProbability;
+
+  const aiActive = Boolean(ai?.enabled);
+  const aiPick = String(ai?.bestPick || "No Strong Pick");
   const agreement = Number(prediction?.ensemble?.agreement ?? 0);
   const distance = Number(prediction?.ensemble?.distributionDistance ?? 999);
-  const samePick = Boolean(ai?.enabled) && String(ai?.bestPick || "") === String(prediction?.pick || "");
+  const stable = String(prediction?.ensemble?.stability || "") === "STABLE";
 
-  const checks = {
-    aiActive: Boolean(ai?.enabled),
-    highData: prediction?.dataQuality?.level === "high",
-    confidence: Number(prediction?.confidence || 0) >= 75,
-    topProbability: topProbability >= 55,
-    margin: margin >= 14,
-    modelAgreement: agreement >= 88,
-    samePick,
-    lowModelDistance: distance <= 7,
-    stable: String(prediction?.ensemble?.stability || "") === "STABLE",
-    lowRisk: String(prediction?.risk || "") === "LOW",
-    directionalPick: prediction?.pick === "Home Win" || prediction?.pick === "Away Win"
+  const homeGames = Number(prediction?.dataQuality?.homeGames || prediction?.form?.home?.games || 0);
+  const awayGames = Number(prediction?.dataQuality?.awayGames || prediction?.form?.away?.games || 0);
+  const homeVenueGames = Number(prediction?.form?.home?.homeGames || 0);
+  const awayVenueGames = Number(prediction?.form?.away?.awayGames || 0);
+  const highData = prediction?.dataQuality?.level === "high";
+  const sampleOK = homeGames >= 8 && awayGames >= 8;
+  const venueSampleOK = homeVenueGames >= 4 && awayVenueGames >= 4;
+
+  const oneXTwo = {
+    market: "1X2",
+    pick: topPick,
+    probability: round(topProbability, 1),
+    margin: round(margin, 1),
+    eligible:
+      aiActive && highData && sampleOK && venueSampleOK &&
+      Number(prediction?.confidence || 0) >= 80 &&
+      topProbability >= 60 && margin >= 18 &&
+      agreement >= 92 && aiPick === topPick &&
+      distance <= 5 && stable,
+    criteria: {
+      aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      confidenceMin80: Number(prediction?.confidence || 0) >= 80,
+      probabilityMin60: topProbability >= 60,
+      marginMin18: margin >= 18,
+      agreementMin92: agreement >= 92,
+      aiSamePick: aiPick === topPick,
+      modelDistanceMax5: distance <= 5,
+      stable
+    }
   };
 
-  const score =
-    (checks.highData ? 25 : 0) +
-    Math.min(25, Math.max(0, (Number(prediction?.confidence || 0) - 60) * 1.25)) +
-    Math.min(20, Math.max(0, (topProbability - 45) * 2)) +
-    Math.min(15, Math.max(0, (margin - 5) * 1.5)) +
-    Math.min(15, Math.max(0, (agreement - 70) * 0.5));
+  const drawEdge = drawProb - Math.max(home, away);
+  const draw = {
+    market: "DRAW",
+    pick: "Draw",
+    probability: round(drawProb, 1),
+    margin: round(drawEdge, 1),
+    eligible:
+      aiActive && highData && sampleOK && venueSampleOK &&
+      drawProb >= 38 && drawEdge >= 8 &&
+      aiPick === "Draw" && agreement >= 92 &&
+      distance <= 5 && stable,
+    criteria: {
+      aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      probabilityMin38: drawProb >= 38,
+      drawEdgeMin8: drawEdge >= 8,
+      aiDraw: aiPick === "Draw",
+      agreementMin92: agreement >= 92,
+      modelDistanceMax5: distance <= 5,
+      stable
+    }
+  };
 
-  const hardPass = Object.values(checks).every(Boolean);
+  const bttsPick = statBtts >= 50 ? "BTTS YES" : "BTTS NO";
+  const aiBttsPick = aiBtts >= 50 ? "BTTS YES" : "BTTS NO";
+  const bttsProbability = bttsPick === "BTTS YES" ? statBtts : 100 - statBtts;
+  const bttsAiProbability = bttsPick === "BTTS YES" ? aiBtts : 100 - aiBtts;
+  const bttsConfidence = Math.max(statBtts, 100 - statBtts);
+  const bttsEdge = Math.abs(statBtts - 50);
 
-  const reasons = [];
-  for (const [key, pass] of Object.entries(checks)) if (!pass) reasons.push(key);
+  const btts = {
+    market: "BTTS",
+    pick: bttsPick,
+    probability: round(bttsProbability, 1),
+    aiProbability: round(bttsAiProbability, 1),
+    edge: round(bttsEdge, 1),
+    modelDistance: round(bttsDistance, 1),
+    eligible:
+      aiActive && highData && sampleOK && venueSampleOK &&
+      bttsConfidence >= 65 && bttsEdge >= 15 &&
+      aiBttsPick === bttsPick && bttsDistance <= 5 &&
+      agreement >= 92 && stable,
+    criteria: {
+      aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      confidenceMin65: bttsConfidence >= 65,
+      edgeMin15: bttsEdge >= 15,
+      aiSameSignal: aiBttsPick === bttsPick,
+      bttsModelDistanceMax5: bttsDistance <= 5,
+      agreementMin92: agreement >= 92,
+      stable
+    }
+  };
+
+  const markets = { oneXTwo, draw, btts };
+  const eligibleMarkets = Object.values(markets).filter(m => m.eligible);
+  const primary = [...eligibleMarkets].sort((a,b)=>(Number(b.probability||0)-Number(a.probability||0)))[0] || null;
+
+  const scoreFor = m => {
+    const probability = Number(m.probability || 0);
+    const edge = Math.abs(Number(m.margin ?? m.edge ?? 0));
+    return round((m.eligible ? 60 : 0) + Math.min(25, Math.max(0, (probability - 50) * 1.5)) + Math.min(15, Math.max(0, edge)), 1);
+  };
+  for (const market of Object.values(markets)) market.score = scoreFor(market);
+
+  const eligibleWithScores = Object.values(markets).filter(m => m.eligible).sort((a,b)=>b.score-a.score);
+  const best = eligibleWithScores[0] || null;
 
   return {
-    eligible: hardPass,
-    tier: hardPass ? "VVIP" : "REJECTED",
-    score: round(score, 1),
-    topProbability: round(topProbability, 1),
-    probabilityMargin: round(margin, 1),
-    reasons,
-    criteria: checks
+    eligible: eligibleWithScores.length > 0,
+    tier: eligibleWithScores.length ? "VVIP" : "REJECTED",
+    primaryMarket: best?.market || null,
+    primaryPick: best?.pick || null,
+    score: best?.score || 0,
+    topProbability: best?.probability || 0,
+    probabilityMargin: best?.margin ?? best?.edge ?? 0,
+    markets,
+    eligibleMarkets: eligibleWithScores.map(m => ({
+      market: m.market,
+      pick: m.pick,
+      probability: m.probability,
+      score: m.score
+    })),
+    reasons: Object.values(markets).filter(m=>!m.eligible).map(m=>m.market + ": rejected"),
+    criteria: { aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK }
   };
 }
 
