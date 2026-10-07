@@ -363,7 +363,7 @@
 
     <div class="matches-header">
 
-      <h2>👑 VVIP Picks Only</h2>
+      <h2>⚽ All Fixtures • 👑 VVIP First</h2>
 
       <div
         id="matchCount"
@@ -750,6 +750,8 @@
       <div
         class="match vvip-candidate"
         id="match-${escapeHTML(id)}"
+        data-vvip="0"
+        data-big-league="${match.bigLeague ? 1 : 0}"
         style="display:block;"
       >
 
@@ -929,6 +931,13 @@
     await Promise.all(
       Array.from({length: concurrency}, () => worker())
     );
+
+    const matchContainer = document.getElementById("matches");
+    const orderedCards = Array.from(matchContainer.querySelectorAll(".match")).sort((a,b) =>
+      Number(b.dataset.vvip || 0) - Number(a.dataset.vvip || 0) ||
+      Number(b.dataset.bigLeague || 0) - Number(a.dataset.bigLeague || 0)
+    );
+    orderedCards.forEach(card => matchContainer.appendChild(card));
 
     const count = document.getElementById("matchCount");
     count.textContent = total + " matches • " + vvipCount + " VVIP pick" + (vvipCount === 1 ? "" : "s");
