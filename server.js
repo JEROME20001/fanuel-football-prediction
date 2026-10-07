@@ -330,7 +330,7 @@ async function api(req,res,url){
       const matches=windowMatches.slice(0,VVIP_CANDIDATES);
       const bigLeagueCount=matches.filter(m=>m.bigLeague).length;
       const toDate=addDays(date,days-1);
-      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:true,priorityMode:"BIG_LEAGUES_FIRST",bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} VVIP candidate matches from ${date} through ${toDate}, with big leagues prioritized.`});
+      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:false,allMatches:true,priorityMode:"BIG_LEAGUES_FIRST",bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} matches from ${date} through ${toDate}; big leagues are prioritized, while VVIP-qualified picks are highlighted first.`});
     }catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
   }
   if(url.pathname==="/api/sportscore-test"||url.pathname==="/api/test"){
