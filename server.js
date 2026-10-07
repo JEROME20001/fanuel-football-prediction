@@ -33,6 +33,19 @@ function saveDB(db) {
   catch (e) { console.log("DB save error:", e.message); }
 }
 const db = loadDB();
+const seenPredictionFixtures = new Set();
+const dedupedPredictions = [];
+for (let i = db.predictions.length - 1; i >= 0; i--) {
+  const prediction = db.predictions[i];
+  const key = String(prediction?.fixtureId || "");
+  if (key && seenPredictionFixtures.has(key)) continue;
+  if (key) seenPredictionFixtures.add(key);
+  dedupedPredictions.unshift(prediction);
+}
+if (dedupedPredictions.length !== db.predictions.length) {
+  db.predictions = dedupedPredictions;
+  saveDB(db);
+}
 const cache = new Map();
 function cacheGet(key) {
   const item = cache.get(key);
