@@ -1005,6 +1005,9 @@
     const qualityLevel = String(quality.level || "low").toLowerCase();
     const qualityLabel = qualityLevel === "high" ? "🟢 HIGH DATA" : qualityLevel === "medium" ? "🟡 MEDIUM DATA" : "🔴 LOW DATA";
     const ensemble = prediction.ensemble || {};
+    const vvipPrimaryMarket = prediction.vvip?.primaryMarket || "";
+    const vvipPrimaryPick = prediction.vvip?.primaryPick || prediction.pick || "N/A";
+    const vvipPrimaryProbability = prediction.vvip?.topProbability ?? prediction.confidence ?? 0;
 
 
     const vvipMarkets = [
@@ -1033,10 +1036,13 @@
         </div>
 
         <div class="pick">
-          ${escapeHTML(
-            prediction.pick ||
-            "N/A"
-          )}
+          ${escapeHTML(vvipPrimaryPick)}
+        </div>
+        <div class="confidence" style="margin-top:4px;">
+          👑 VVIP Primary Market:
+          <b>${escapeHTML(vvipPrimaryMarket || "N/A")}</b>
+          • Qualified probability:
+          <b>${escapeHTML(vvipPrimaryProbability)}%</b>
         </div>
 
         ${vvipMarkets}
@@ -1048,7 +1054,7 @@
         </div>
 
         <div class="confidence">
-          Confidence:
+          Overall model confidence:
           <b>
             ${escapeHTML(
               prediction.confidence ??
