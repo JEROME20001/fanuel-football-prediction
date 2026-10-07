@@ -41,6 +41,17 @@
       margin: 25px auto;
     }
 
+    .vvip-badge {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: #b8860b;
+      color: #fff;
+      font-size: 11px;
+      letter-spacing: .5px;
+    }
+
     .panel {
       background: #0b1d35;
       border: 1px solid #163a62;
@@ -698,7 +709,7 @@
       `;
 
       count.textContent =
-        "0 matches";
+        "0 VVIP picks";
 
       showStatus(
         `❌ ${escapeHTML(error.message)}`,
@@ -737,8 +748,9 @@
 
     return `
       <div
-        class="match"
+        class="match vvip-candidate"
         id="match-${escapeHTML(id)}"
+        style="display:none;"
       >
 
         <div class="league">
@@ -780,7 +792,7 @@
 
         </div>
         <div class="prediction" style="margin-top:15px;">
-          <span class="spinner"></span> Automatic prediction is starting...
+          <span class="spinner"></span> VVIP screening in progress...
         </div>
 
 <div
