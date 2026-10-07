@@ -648,7 +648,7 @@
       */
 
       count.textContent =
-        `${matches.length} VVIP candidate${matches.length === 1 ? "" : "s"}`;
+        `${matches.length} matches • VVIP screening active`;
 
       if (!matches.length) {
 
@@ -750,7 +750,7 @@
       <div
         class="match vvip-candidate"
         id="match-${escapeHTML(id)}"
-        style="display:none;"
+        style="display:block;"
       >
 
         <div class="league">
@@ -865,12 +865,26 @@
       }
 
       const vvip = data.prediction.vvip || {};
+      const card = predictionBox.closest(".match");
+      if (!card) return {eligible:false};
+
       if (!vvip.eligible) {
-        predictionBox.closest(".match")?.remove();
+        card.dataset.vvip = "0";
+        card.dataset.bigLeague = String(match.bigLeague ? 1 : 0);
+        predictionBox.innerHTML = `
+          <div class="prediction" style="border-left-color:#5b7087;">
+            <b>Screened</b><br>
+            This match did not pass the strict VVIP gate.<br>
+            <small>It remains visible as a regular fixture. VVIP picks are prioritized above.</small>
+          </div>`;
         return {eligible:false};
       }
 
-      predictionBox.closest(".match")?.style && (predictionBox.closest(".match").style.display = "block");
+      card.dataset.vvip = "1";
+      card.dataset.bigLeague = String(match.bigLeague ? 1 : 0);
+      const container = document.getElementById("matches");
+      const vvipCards = Array.from(container.querySelectorAll(".match")).filter(el => el.dataset.vvip === "1");
+      if (vvipCards.length) container.prepend(card);
       displayPrediction(predictionBox, data.prediction);
       loadPredictionHistory();
       loadPerformance();
@@ -917,12 +931,12 @@
     );
 
     const count = document.getElementById("matchCount");
-    count.textContent = vvipCount + " VVIP pick" + (vvipCount === 1 ? "" : "s");
+    count.textContent = total + " matches • " + vvipCount + " VVIP pick" + (vvipCount === 1 ? "" : "s");
 
     showStatus(
       vvipCount
-        ? "👑 VVIP screening completed: " + vvipCount + " strict VVIP pick" + (vvipCount === 1 ? "" : "s") + " published. Other matches were rejected."
-        : "🛑 No VVIP match qualified in the selected window. The system rejected candidates instead of forcing predictions. Check the candidate rejection details.",
+        ? "👑 VVIP screening completed: " + vvipCount + " strict VVIP pick" + (vvipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
+        : "🛑 No VVIP match qualified in the selected window. All fixtures remain visible; the system did not force a weak VVIP prediction.",
       vvipCount ? "success" : "error"
     );
 
