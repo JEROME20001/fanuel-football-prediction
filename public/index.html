@@ -1296,15 +1296,44 @@
 
   async function loadSystemStatus() {
     const box = document.getElementById("systemStatus");
+    if (!box) return;
+    box.innerHTML = '<span class="status-dot warn"></span>Connecting to prediction server...';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetch("/api/health", {cache:"no-store"});
+      const response = await fetch("/api/health?ts=" + Date.now(), {
+        cache: "no-store",
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status);
       const data = await response.json();
-      const apiState = data.tokenConfigured ? '<span class="status-dot ok"></span>SportScore connected' : '<span class="status-dot bad"></span>SportScore unavailable';
-      const aiState = data.aiConfigured ? '<span class="status-dot ok"></span>AI configured' : '<span class="status-dot warn"></span>AI key not configured';
-      box.innerHTML = `<div class="status-grid"><div class="status-card">${apiState}</div><div class="status-card">${aiState}</div></div>`;
-      const modelState = '<span class="status-dot ok"></span>Model: ' + escapeHTML(data.aiModel || "N/A");
-      box.innerHTML = '<div class="status-grid"><div class="status-card">' + apiState + '</div><div class="status-card">' + aiState + '</div><div class="status-card">' + modelState + '</div><div class="status-card"><span class="status-dot ok"></span>Odds input: NO</div></div>';    } catch (error) {
-      box.innerHTML = '<span class="status-dot bad"></span>Unable to read system status';
+
+      const apiState = data.tokenConfigured
+        ? '<span class="status-dot ok"></span>SportScore connected'
+        : '<span class="status-dot bad"></span>SportScore unavailable';
+
+      const aiState = data.aiConfigured
+        ? '<span class="status-dot ok"></span>AI configured'
+        : '<span class="status-dot warn"></span>AI key not configured';
+
+      const modelState =
+        '<span class="status-dot ok"></span>Model: ' +
+        escapeHTML(data.aiModel || "N/A");
+
+      box.innerHTML =
+        '<div class="status-grid">' +
+          '<div class="status-card">' + apiState + '</div>' +
+          '<div class="status-card">' + aiState + '</div>' +
+          '<div class="status-card">' + modelState + '</div>' +
+          '<div class="status-card"><span class="status-dot ok"></span>Odds input: NO</div>' +
+        '</div>';
+    } catch (error) {
+      const message = error?.name === "AbortError"
+        ? "Server connection timed out."
+        : "Unable to read system status (" + (error?.message || "unknown error") + ").";
+      box.innerHTML = '<span class="status-dot bad"></span>' + escapeHTML(message);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
