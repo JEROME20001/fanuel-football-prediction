@@ -41,7 +41,7 @@
       margin: 25px auto;
     }
 
-    .vvip-badge {
+    .vip-badge {
       display: inline-block;
       margin-left: 8px;
       padding: 4px 9px;
@@ -318,8 +318,8 @@
 <body>
 
 <header>
-  <h1>👑 Fanuel Football Prediction — VVIP ONLY</h1>
-  <p>AI Deep Analysis • VVIP Selection • Historical Performance</p><div style="margin-top:6px;font-size:12px;color:#8fc8ff;">System Build: VVIP-MULTIMARKET • 2026</div>
+  <h1>👑 Fanuel Football Prediction — VIP ONLY</h1>
+  <p>AI Deep Analysis • VIP Selection • Historical Performance</p><div style="margin-top:6px;font-size:12px;color:#8fc8ff;">System Build: VIP-MULTIMARKET • 2026</div>
   <div id="systemStatus" style="margin-top:12px;font-size:13px;color:#c7e3ff;">Connecting to prediction server...</div>
 </header>
 
@@ -363,13 +363,13 @@
 
     <div class="matches-header">
 
-      <h2>⚽ All Fixtures • 👑 VVIP First</h2>
+      <h2>⚽ All Fixtures • 👑 VIP First</h2>
 
       <div
         id="matchCount"
         class="count"
       >
-        0 VVIP picks
+        0 VIP picks
       </div>
 
     </div>
@@ -648,7 +648,7 @@
       */
 
       count.textContent =
-        `${matches.length} matches • VVIP screening active`;
+        `${matches.length} matches • VIP screening active`;
 
       if (!matches.length) {
 
@@ -675,7 +675,7 @@
       container.innerHTML = "";
 
       /*
-        Only VVIP-qualified matches are shown. Non-VVIP matches stay hidden.
+        Only VIP-qualified matches are shown. Non-VIP matches stay hidden.
       */
 
       matches.forEach(
@@ -709,7 +709,7 @@
       `;
 
       count.textContent =
-        "0 VVIP picks";
+        "0 VIP picks";
 
       showStatus(
         `❌ ${escapeHTML(error.message)}`,
@@ -748,9 +748,9 @@
 
     return `
       <div
-        class="match vvip-candidate"
+        class="match vip-candidate"
         id="match-${escapeHTML(id)}"
-        data-vvip="0"
+        data-vip="0"
         data-big-league="${match.bigLeague ? 1 : 0}"
         style="display:block;"
       >
@@ -794,7 +794,7 @@
 
         </div>
         <div class="prediction" style="margin-top:15px;">
-          <span class="spinner"></span> VVIP screening in progress...
+          <span class="spinner"></span> VIP screening in progress...
         </div>
 
 <div
@@ -866,27 +866,27 @@
         throw new Error("No prediction was returned.");
       }
 
-      const vvip = data.prediction.vvip || {};
+      const vip = data.prediction.vip || {};
       const card = predictionBox.closest(".match");
       if (!card) return {eligible:false};
 
-      if (!vvip.eligible) {
-        card.dataset.vvip = "0";
+      if (!vip.eligible) {
+        card.dataset.vip = "0";
         card.dataset.bigLeague = String(match.bigLeague ? 1 : 0);
         predictionBox.innerHTML = `
           <div class="prediction" style="border-left-color:#5b7087;">
             <b>Screened</b><br>
-            This match did not pass the strict VVIP gate.<br>
-            <small>It remains visible as a regular fixture. VVIP picks are prioritized above.</small>
+            This match did not pass the strict VIP gate.<br>
+            <small>It remains visible as a regular fixture. VIP picks are prioritized above.</small>
           </div>`;
         return {eligible:false};
       }
 
-      card.dataset.vvip = "1";
+      card.dataset.vip = "1";
       card.dataset.bigLeague = String(match.bigLeague ? 1 : 0);
       const container = document.getElementById("matches");
-      const vvipCards = Array.from(container.querySelectorAll(".match")).filter(el => el.dataset.vvip === "1");
-      if (vvipCards.length) container.prepend(card);
+      const vipCards = Array.from(container.querySelectorAll(".match")).filter(el => el.dataset.vip === "1");
+      if (vipCards.length) container.prepend(card);
       displayPrediction(predictionBox, data.prediction);
       loadPredictionHistory();
       loadPerformance();
@@ -904,11 +904,11 @@
     const total = matches.length;
     const concurrency = Math.min(4, total);
     let completed = 0;
-    let vvipCount = 0;
+    let vipCount = 0;
     let nextIndex = 0;
 
     showStatus(
-      "🧠 VVIP screening started: 0/" + total + " candidates checked. Only qualifying games will be published.",
+      "🧠 VIP screening started: 0/" + total + " candidates checked. Only qualifying games will be published.",
       "success"
     );
 
@@ -918,11 +918,11 @@
         if (index >= total) return;
 
         const outcome = await analyzeMatch(matches[index], index);
-        if (outcome?.eligible) vvipCount++;
+        if (outcome?.eligible) vipCount++;
         completed++;
 
         showStatus(
-          "🧠 VVIP screening: " + completed + "/" + total + " checked • " + vvipCount + " VVIP picks found.",
+          "🧠 VIP screening: " + completed + "/" + total + " checked • " + vipCount + " VIP picks found.",
           completed === total ? "success" : ""
         );
       }
@@ -934,19 +934,19 @@
 
     const matchContainer = document.getElementById("matches");
     const orderedCards = Array.from(matchContainer.querySelectorAll(".match")).sort((a,b) =>
-      Number(b.dataset.vvip || 0) - Number(a.dataset.vvip || 0) ||
+      Number(b.dataset.vip || 0) - Number(a.dataset.vip || 0) ||
       Number(b.dataset.bigLeague || 0) - Number(a.dataset.bigLeague || 0)
     );
     orderedCards.forEach(card => matchContainer.appendChild(card));
 
     const count = document.getElementById("matchCount");
-    count.textContent = total + " matches • " + vvipCount + " VVIP pick" + (vvipCount === 1 ? "" : "s");
+    count.textContent = total + " matches • " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s");
 
     showStatus(
-      vvipCount
-        ? "👑 VVIP screening completed: " + vvipCount + " strict VVIP pick" + (vvipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
-        : "🛑 No VVIP match qualified in the selected window. All fixtures remain visible; the system did not force a weak VVIP prediction.",
-      vvipCount ? "success" : "error"
+      vipCount
+        ? "👑 VIP screening completed: " + vipCount + " strict VIP pick" + (vipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
+        : "🛑 No VIP match qualified in the selected window. All fixtures remain visible; the system did not force a weak VIP prediction.",
+      vipCount ? "success" : "error"
     );
 
     loadSystemStatus();
@@ -1028,20 +1028,20 @@
     const qualityLevel = String(quality.level || "low").toLowerCase();
     const qualityLabel = qualityLevel === "high" ? "🟢 HIGH DATA" : qualityLevel === "medium" ? "🟡 MEDIUM DATA" : "🔴 LOW DATA";
     const ensemble = prediction.ensemble || {};
-    const vvipPrimaryMarket = prediction.vvip?.primaryMarket || "";
-    const vvipPrimaryPick = prediction.vvip?.primaryPick || prediction.pick || "N/A";
-    const vvipPrimaryProbability = prediction.vvip?.topProbability ?? prediction.confidence ?? 0;
+    const vipPrimaryMarket = prediction.vip?.primaryMarket || "";
+    const vipPrimaryPick = prediction.vip?.primaryPick || prediction.pick || "N/A";
+    const vipPrimaryProbability = prediction.vip?.topProbability ?? prediction.confidence ?? 0;
 
 
-    const vvipMarkets = [
-      prediction.vvip?.markets?.oneXTwo?.eligible
-        ? '<div class="stat"><b>👑 VVIP 1X2</b><br>' + escapeHTML(prediction.vvip.markets.oneXTwo.pick) + '<br><small>' + escapeHTML(prediction.vvip.markets.oneXTwo.probability) + '%</small></div>'
+    const vipMarkets = [
+      prediction.vip?.markets?.oneXTwo?.eligible
+        ? '<div class="stat"><b>👑 VIP 1X2</b><br>' + escapeHTML(prediction.vip.markets.oneXTwo.pick) + '<br><small>' + escapeHTML(prediction.vip.markets.oneXTwo.probability) + '%</small></div>'
         : "",
-      prediction.vvip?.markets?.draw?.eligible
-        ? '<div class="stat"><b>👑 VVIP DRAW</b><br>Draw<br><small>' + escapeHTML(prediction.vvip.markets.draw.probability) + '%</small></div>'
+      prediction.vip?.markets?.draw?.eligible
+        ? '<div class="stat"><b>👑 VIP DRAW</b><br>Draw<br><small>' + escapeHTML(prediction.vip.markets.draw.probability) + '%</small></div>'
         : "",
-      prediction.vvip?.markets?.btts?.eligible
-        ? '<div class="stat"><b>👑 VVIP BTTS</b><br>' + escapeHTML(prediction.vvip.markets.btts.pick) + '<br><small>' + escapeHTML(prediction.vvip.markets.btts.probability) + '%</small></div>'
+      prediction.vip?.markets?.btts?.eligible
+        ? '<div class="stat"><b>👑 VIP BTTS</b><br>' + escapeHTML(prediction.vip.markets.btts.pick) + '<br><small>' + escapeHTML(prediction.vip.markets.btts.probability) + '%</small></div>'
         : ""
     ].filter(Boolean).join("");
 
@@ -1050,25 +1050,25 @@
       <div class="prediction">
 
         <h3>
-          👑 VVIP AI Deep Prediction
-          <span class="ai-badge">VVIP QUALIFIED</span>
+          👑 VIP AI Deep Prediction
+          <span class="ai-badge">VIP QUALIFIED</span>
         </h3>
 
         <div class="status success" style="margin-top:10px;">
-          <b>👑 VVIP PICK</b> • Strict gate passed • Score: ${escapeHTML(prediction.vvip?.score ?? "N/A")}/100
+          <b>👑 VIP PICK</b> • Strict gate passed • Score: ${escapeHTML(prediction.vip?.score ?? "N/A")}/100
         </div>
 
         <div class="pick">
-          ${escapeHTML(vvipPrimaryPick)}
+          ${escapeHTML(vipPrimaryPick)}
         </div>
         <div class="confidence" style="margin-top:4px;">
-          👑 VVIP Primary Market:
-          <b>${escapeHTML(vvipPrimaryMarket || "N/A")}</b>
+          👑 VIP Primary Market:
+          <b>${escapeHTML(vipPrimaryMarket || "N/A")}</b>
           • Qualified probability:
-          <b>${escapeHTML(vvipPrimaryProbability)}%</b>
+          <b>${escapeHTML(vipPrimaryProbability)}%</b>
         </div>
 
-        ${vvipMarkets}
+        ${vipMarkets}
 
         <div class="status" style="margin-top:10px;">
           <b>Data Quality: ${escapeHTML(qualityLabel)}</b>
