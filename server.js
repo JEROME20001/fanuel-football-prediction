@@ -269,7 +269,7 @@ async function runFootballAI(context){
   let ai; try{ai=JSON.parse(text);}catch{throw new Error("AI output haikuwa JSON.");}
   return {enabled:true,model:OPENAI_MODEL,status:"AI validation active",...ai};
 }
-function historyRows(){return db.results.map(r=>{const p=db.predictions.find(x=>String(x.fixtureId)===String(r.fixtureId));return p&&p.vvip?.eligible===true?{prediction:p,result:r}:null;}).filter(Boolean);}
+function historyRows(){return db.results.map(r=>{const p=db.predictions.find(x=>String(x.fixtureId)===String(r.fixtureId));return p&&(p.vip?.eligible===true||(p.vip?.eligible===true||p.vvip?.eligible===true))?{prediction:p,result:r}:null;}).filter(Boolean);}
 function attachAI(result,ai){result.ai={enabled:Boolean(ai.enabled),model:ai.model||null,status:ai.status||"",bestPick:ai.bestPick||"No Strong Pick",confidence:Number(ai.confidence||0),suggestedCorrectScore:result.decisionStatus==="NO_STRONG_PICK"?"N/A":(ai.correctScore||"N/A"),analysis:result.decisionStatus==="NO_STRONG_PICK"&&ai.enabled?"No Strong Pick: models do not justify forcing a directional winner.":(ai.analysis||""),factors:Array.isArray(ai.factors)?ai.factors:[],risk:result.risk};return result;}
 async function analyze(fixtureId,suppliedMatch){
   let fixture;
@@ -288,9 +288,9 @@ async function analyze(fixtureId,suppliedMatch){
   result.provider="SportScore"; result.usesOdds=false; result.predictionSnapshot={probabilities:{...result.probabilities},over25:result.over25,btts:result.btts,confidence:result.confidence,league:fixture.league||null};
   result.createdAt=new Date().toISOString();
   attachAI(result,ai);
-  // VVIP-only mode: non-qualifying matches are analyzed but never published or stored as predictions.
-  result.vvip = engine.vvipSelection(result,ai);
-  if(!result.vvip.eligible) return result;
+  // VIP mode: qualifying matches are stored; non-qualifying fixtures remain visible in the frontend.
+  result.vip = engine.vipSelection(result,ai);
+  if(!result.vip.eligible) return result;
 
   // Prevent duplicate AI usage/storage for the same fixture.
   const existing = [...db.predictions].reverse().find(p => String(p.fixtureId) === String(result.fixtureId));
@@ -318,9 +318,9 @@ function logLoss(actual,p){const v=actual==="Home Win"?Number(p.home||0)/100:act
 function calibrationBuckets(rows){const b={"50-59":{count:0,correct:0,avgConfidence:0},"60-69":{count:0,correct:0,avgConfidence:0},"70-79":{count:0,correct:0,avgConfidence:0},"80+":{count:0,correct:0,avgConfidence:0}};for(const r of rows){if(r.prediction.pick==="No Strong Pick")continue;const c=Math.max(0,Math.min(100,Number(r.prediction.confidence||0))),k=c>=80?"80+":c>=70?"70-79":c>=60?"60-69":"50-59";b[k].count++;b[k].correct+=r.result.correct===true?1:0;b[k].avgConfidence+=c;}for(const x of Object.values(b)){x.accuracy=x.count?Math.round(x.correct/x.count*1000)/10:null;x.avgConfidence=x.count?Math.round(x.avgConfidence/x.count*10)/10:null;}return b;}
 
 async function api(req,res,url){
-  if(url.pathname==="/api/health")return sendJSON(res,200,{ok:true,provider:"SportScore",tokenConfigured:true,aiConfigured:Boolean(OPENAI_API_KEY),aiModel:OPENAI_MODEL,vvipOnly:true,vvipCandidates:VVIP_CANDIDATES,service:"Fanuel Football Prediction",engine:"v4-multi-model-calibrated",serverTime:new Date().toISOString()});
+  if(url.pathname==="/api/health")return sendJSON(res,200,{ok:true,provider:"SportScore",tokenConfigured:true,aiConfigured:Boolean(OPENAI_API_KEY),aiModel:OPENAI_MODEL,vipOnly:false,vipCandidates:VVIP_CANDIDATES,service:"Fanuel Football Prediction",engine:"v4-multi-model-calibrated",serverTime:new Date().toISOString()});
   if(url.pathname==="/api/ai-health")return sendJSON(res,200,{ok:true,configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,message:OPENAI_API_KEY?"OpenAI football AI is configured.":"OPENAI_API_KEY haijawekwa kwenye Render."});
-  if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.filter(p=>p.vvip?.eligible===true).length,storedTotal:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.filter(p=>p.vvip?.eligible===true).length-rows.length)},calibrationReady:rows.length>=10,vvipOnly:true,vvipCandidates:VVIP_CANDIDATES,vvipCriteria:{markets:["1X2","DRAW","BTTS"],aiActive:true,dataQuality:"HIGH",oneXTwo:{confidenceMin:80,topProbabilityMin:60,marginMin:18,agreementMin:92,distributionDistanceMax:5,stability:"STABLE"},draw:{probabilityMin:38,drawEdgeMin:8,agreementMin:92,distributionDistanceMax:5,stability:"STABLE"},btts:{confidenceMin:65,edgeMin:15,modelDistanceMax:5,agreementMin:92,stability:"STABLE"}},engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","VVIP gate","correct-score distribution"],oddsUsed:false});}
+  if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.filter(p=>p.vvip?.eligible===true).length,storedTotal:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.filter(p=>p.vvip?.eligible===true).length-rows.length)},calibrationReady:rows.length>=10,vipOnly:false,vipCandidates:VVIP_CANDIDATES,vipCriteria:{markets:["1X2","DRAW","BTTS"],aiActive:true,dataQuality:"HIGH",oneXTwo:{confidenceMin:80,topProbabilityMin:60,marginMin:18,agreementMin:92,distributionDistanceMax:5,stability:"STABLE"},draw:{probabilityMin:38,drawEdgeMin:8,agreementMin:92,distributionDistanceMax:5,stability:"STABLE"},btts:{confidenceMin:65,edgeMin:15,modelDistanceMax:5,agreementMin:92,stability:"STABLE"}},engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","VIP gate","correct-score distribution"],oddsUsed:false});}
   if(url.pathname==="/api/upcoming"){
     const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);
     const days=Math.max(1,Math.min(7,Number(url.searchParams.get("days")||7)));
@@ -330,7 +330,7 @@ async function api(req,res,url){
       const matches=windowMatches.slice(0,VVIP_CANDIDATES);
       const bigLeagueCount=matches.filter(m=>m.bigLeague).length;
       const toDate=addDays(date,days-1);
-      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:false,allMatches:true,priorityMode:"BIG_LEAGUES_FIRST",bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} matches from ${date} through ${toDate}; big leagues are prioritized, while VVIP-qualified picks are highlighted first.`});
+      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:false,allMatches:true,priorityMode:"BIG_LEAGUES_FIRST",bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} matches from ${date} through ${toDate}; big leagues are prioritized, while VIP-qualified picks are highlighted first.`});
     }catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
   }
   if(url.pathname==="/api/sportscore-test"||url.pathname==="/api/test"){
