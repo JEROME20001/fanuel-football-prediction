@@ -11,6 +11,7 @@ const SPORTSCORE_BASE = "https://sportscore.com";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 const MAX_AI_DAILY = Math.max(1, Number(process.env.MAX_AI_DAILY || 150));
+const VVIP_CANDIDATES = Math.max(10, Math.min(60, Number(process.env.VVIP_CANDIDATES || 40)));
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -229,8 +230,11 @@ async function analyze(fixtureId,suppliedMatch){
   const result=engine.buildFinal(statistical,ai,historyRows());
   result.form={home:homeForm,away:awayForm};
   result.provider="SportScore"; result.usesOdds=false; result.predictionSnapshot={probabilities:{...result.probabilities},over25:result.over25,btts:result.btts,confidence:result.confidence,league:fixture.league||null};
-  attachAI(result,ai);
   result.createdAt=new Date().toISOString();
+  attachAI(result,ai);
+  // VVIP-only mode: non-qualifying matches are analyzed but never published or stored as predictions.
+  result.vvip = engine.vvipSelection(result,ai);
+  if(!result.vvip.eligible) return result;
   db.predictions.push(result); if(db.predictions.length>500) db.predictions=db.predictions.slice(-500); saveDB(db);
   return result;
 }
@@ -245,12 +249,12 @@ function logLoss(actual,p){const v=actual==="Home Win"?Number(p.home||0)/100:act
 function calibrationBuckets(rows){const b={"50-59":{count:0,correct:0,avgConfidence:0},"60-69":{count:0,correct:0,avgConfidence:0},"70-79":{count:0,correct:0,avgConfidence:0},"80+":{count:0,correct:0,avgConfidence:0}};for(const r of rows){if(r.prediction.pick==="No Strong Pick")continue;const c=Math.max(0,Math.min(100,Number(r.prediction.confidence||0))),k=c>=80?"80+":c>=70?"70-79":c>=60?"60-69":"50-59";b[k].count++;b[k].correct+=r.result.correct===true?1:0;b[k].avgConfidence+=c;}for(const x of Object.values(b)){x.accuracy=x.count?Math.round(x.correct/x.count*1000)/10:null;x.avgConfidence=x.count?Math.round(x.avgConfidence/x.count*10)/10:null;}return b;}
 
 async function api(req,res,url){
-  if(url.pathname==="/api/health")return sendJSON(res,200,{ok:true,provider:"SportScore",tokenConfigured:true,aiConfigured:Boolean(OPENAI_API_KEY),aiModel:OPENAI_MODEL,service:"Fanuel Football Prediction",engine:"v4-multi-model-calibrated",serverTime:new Date().toISOString()});
+  if(url.pathname==="/api/health")return sendJSON(res,200,{ok:true,provider:"SportScore",tokenConfigured:true,aiConfigured:Boolean(OPENAI_API_KEY),aiModel:OPENAI_MODEL,vvipOnly:true,vvipCandidates:VVIP_CANDIDATES,service:"Fanuel Football Prediction",engine:"v4-multi-model-calibrated",serverTime:new Date().toISOString()});
   if(url.pathname==="/api/ai-health")return sendJSON(res,200,{ok:true,configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,message:OPENAI_API_KEY?"OpenAI football AI is configured.":"OPENAI_API_KEY haijawekwa kwenye Render."});
-  if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.length-rows.length)},calibrationReady:rows.length>=10,engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","correct-score distribution"],oddsUsed:false});}
+  if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.length-rows.length)},calibrationReady:rows.length>=10,vvipOnly:true,vvipCandidates:VVIP_CANDIDATES,vvipCriteria:{aiActive:true,dataQuality:"HIGH",confidenceMin:75,topProbabilityMin:55,marginMin:14,agreementMin:88,distributionDistanceMax:7,stability:"STABLE",risk:"LOW",directionalPickOnly:true},engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","VVIP gate","correct-score distribution"],oddsUsed:false});}
   if(url.pathname==="/api/upcoming"){
     const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return sendJSON(res,400,{ok:false,error:"Tumia date ya YYYY-MM-DD"});
-    try{const result=await getFixtures(date);const matches=result.matches.slice(0,150);return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,dailyLimit:150,count:matches.length,matches,message:`${matches.length} upcoming matches found for ${date}.`});}catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
+    try{const result=await getFixtures(date);const matches=result.matches.slice(0,VVIP_CANDIDATES);return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,dailyLimit:150,vvipOnly:true,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} VVIP candidate matches selected for ${date}.`});}catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
   }
   if(url.pathname==="/api/sportscore-test"||url.pathname==="/api/test"){
     const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);try{const r=await getFixtures(date);return sendJSON(res,200,{ok:true,provider:"SportScore",date,count:r.matches.length,matches:r.matches.slice(0,10),message:"SportScore API inafanya kazi."});}catch(e){return sendJSON(res,502,{ok:false,provider:"SportScore",error:e.message});}
