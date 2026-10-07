@@ -345,6 +345,7 @@ function buildFinal(statistical, ai, historyRows = []) {
     expectedGoals: statistical.expectedGoals,
     topScores: statistical.topScores,
     correctScore: e.decisionStatus === "NO_STRONG_PICK" ? "N/A" : statistical.topScores?.[0]?.score || "N/A",
+    vvip: vvipSelection({ ...statistical, ...e }, ai),
     confidenceMetrics: {
       modelConfidence: e.confidence,
       winProbability: Math.max(e.probabilities.home, e.probabilities.draw, e.probabilities.away),
@@ -359,6 +360,53 @@ function buildFinal(statistical, ai, historyRows = []) {
   return final;
 }
 
+function vvipSelection(prediction, ai) {
+  const probs = prediction?.probabilities || {};
+  const values = [Number(probs.home || 0), Number(probs.draw || 0), Number(probs.away || 0)].sort((a,b)=>b-a);
+  const topProbability = values[0] || 0;
+  const secondProbability = values[1] || 0;
+  const margin = topProbability - secondProbability;
+  const agreement = Number(prediction?.ensemble?.agreement ?? 0);
+  const distance = Number(prediction?.ensemble?.distributionDistance ?? 999);
+  const samePick = Boolean(ai?.enabled) && String(ai?.bestPick || "") === String(prediction?.pick || "");
+
+  const checks = {
+    aiActive: Boolean(ai?.enabled),
+    highData: prediction?.dataQuality?.level === "high",
+    confidence: Number(prediction?.confidence || 0) >= 75,
+    topProbability: topProbability >= 55,
+    margin: margin >= 14,
+    modelAgreement: agreement >= 88,
+    samePick,
+    lowModelDistance: distance <= 7,
+    stable: String(prediction?.ensemble?.stability || "") === "STABLE",
+    lowRisk: String(prediction?.risk || "") === "LOW",
+    directionalPick: prediction?.pick === "Home Win" || prediction?.pick === "Away Win"
+  };
+
+  const score =
+    (checks.highData ? 25 : 0) +
+    Math.min(25, Math.max(0, (Number(prediction?.confidence || 0) - 60) * 1.25)) +
+    Math.min(20, Math.max(0, (topProbability - 45) * 2)) +
+    Math.min(15, Math.max(0, (margin - 5) * 1.5)) +
+    Math.min(15, Math.max(0, (agreement - 70) * 0.5));
+
+  const hardPass = Object.values(checks).every(Boolean);
+
+  const reasons = [];
+  for (const [key, pass] of Object.entries(checks)) if (!pass) reasons.push(key);
+
+  return {
+    eligible: hardPass,
+    tier: hardPass ? "VVIP" : "REJECTED",
+    score: round(score, 1),
+    topProbability: round(topProbability, 1),
+    probabilityMargin: round(margin, 1),
+    reasons,
+    criteria: checks
+  };
+}
+
 module.exports = {
   buildStatisticalModel,
   buildFinal,
@@ -366,5 +414,6 @@ module.exports = {
   scoreMatrix,
   probabilitiesFromMatrix,
   topScores,
-  dataQuality
+  dataQuality,
+  vvipSelection
 };
