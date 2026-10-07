@@ -1007,6 +1007,18 @@
     const ensemble = prediction.ensemble || {};
 
 
+    const vvipMarkets = [
+      prediction.vvip?.markets?.oneXTwo?.eligible
+        ? '<div class="stat"><b>👑 VVIP 1X2</b><br>' + escapeHTML(prediction.vvip.markets.oneXTwo.pick) + '<br><small>' + escapeHTML(prediction.vvip.markets.oneXTwo.probability) + '%</small></div>'
+        : "",
+      prediction.vvip?.markets?.draw?.eligible
+        ? '<div class="stat"><b>👑 VVIP DRAW</b><br>Draw<br><small>' + escapeHTML(prediction.vvip.markets.draw.probability) + '%</small></div>'
+        : "",
+      prediction.vvip?.markets?.btts?.eligible
+        ? '<div class="stat"><b>👑 VVIP BTTS</b><br>' + escapeHTML(prediction.vvip.markets.btts.pick) + '<br><small>' + escapeHTML(prediction.vvip.markets.btts.probability) + '%</small></div>'
+        : ""
+    ].filter(Boolean).join("");
+
     box.innerHTML = `
 
       <div class="prediction">
@@ -1027,17 +1039,7 @@
           )}
         </div>
 
-        <div class="stats" style="margin-top:12px;">
-          ${prediction.vvip?.markets?.oneXTwo?.eligible
-            ? \`<div class="stat"><b>👑 VVIP 1X2</b><br>${escapeHTML(prediction.vvip.markets.oneXTwo.pick)}<br><small>${escapeHTML(prediction.vvip.markets.oneXTwo.probability)}%</small></div>\`
-            : ""}
-          ${prediction.vvip?.markets?.draw?.eligible
-            ? \`<div class="stat"><b>👑 VVIP DRAW</b><br>Draw<br><small>${escapeHTML(prediction.vvip.markets.draw.probability)}%</small></div>\`
-            : ""}
-          ${prediction.vvip?.markets?.btts?.eligible
-            ? \`<div class="stat"><b>👑 VVIP BTTS</b><br>${escapeHTML(prediction.vvip.markets.btts.pick)}<br><small>${escapeHTML(prediction.vvip.markets.btts.probability)}%</small></div>\`
-            : ""}
-        </div>
+        ${vvipMarkets}
 
         <div class="status" style="margin-top:10px;">
           <b>Data Quality: ${escapeHTML(qualityLabel)}</b>
