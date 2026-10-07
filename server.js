@@ -248,7 +248,20 @@ async function analyze(fixtureId,suppliedMatch){
   // VVIP-only mode: non-qualifying matches are analyzed but never published or stored as predictions.
   result.vvip = engine.vvipSelection(result,ai);
   if(!result.vvip.eligible) return result;
-  db.predictions.push(result); if(db.predictions.length>500) db.predictions=db.predictions.slice(-500); saveDB(db);
+
+  // Prevent duplicate AI usage/storage for the same fixture.
+  const existing = [...db.predictions].reverse().find(p => String(p.fixtureId) === String(result.fixtureId));
+  if (existing) {
+    return {
+      ...existing,
+      duplicateRequest: true,
+      duplicateOfCreatedAt: existing.createdAt
+    };
+  }
+
+  db.predictions.push(result);
+  if (db.predictions.length > 500) db.predictions = db.predictions.slice(-500);
+  saveDB(db);
   return result;
 }
 function sendJSON(res,status,data){res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","Access-Control-Allow-Origin":"*"});res.end(JSON.stringify(data));}
