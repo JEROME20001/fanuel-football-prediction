@@ -304,22 +304,54 @@ async function getFixture(id) {
   cacheSet("fixture:"+key, fixture, 10);
   return fixture;
 }
+function teamSlugCandidates(name) {
+  const raw = String(name || "").trim().toLowerCase();
+  if (!raw) return [];
+  const variants = new Set();
+  const compact = raw
+    .normalize("NFD").replace(/[\\u0300-\\u036f]/g, "")
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  if (compact) variants.add(compact);
+  const withoutClubSuffix = compact.replace(/-(fc|sc|cf|afc|fk|club|football-club|sports-club)$/i, "");
+  if (withoutClubSuffix) variants.add(withoutClubSuffix);
+  return [...variants];
+}
 function findTeamSearchResult(data, wanted) {
   const list=[];
+  const pushCandidate=(name,slug)=>{
+    if(!name || !slug) return;
+    const s=String(slug).trim();
+    if(!s || /^\\d+$/.test(s)) return;
+    list.push({name:String(name),slug:s.replace(/^.*\\//,"").replace(/\\?.*$/,"").replace(/#.*$/,"")});
+  };
   function walk(v) {
     if (!v || typeof v !== "object") return;
     if (Array.isArray(v)) return v.forEach(walk);
-    const name=v.name||v.team_name||v.title||v.label, slug=v.slug||v.team_slug||v.id||v.team_id;
-    if(name&&slug) list.push({name:String(name),slug:String(slug)});
+    const name=v.name||v.team_name||v.title||v.label;
+    const slug=v.slug||v.team_slug;
+    pushCandidate(name,slug);
+    if (name && (v.site_url||v.url||v.href)) {
+      const link=String(v.site_url||v.url||v.href);
+      const parts=link.split("/").filter(Boolean);
+      const last=parts[parts.length-1];
+      if(last) pushCandidate(name,last);
+    }
     for(const k of Object.keys(v)) if(k!=="raw") walk(v[k]);
   }
   walk(data);
   const w=String(wanted||"").toLowerCase().trim();
-  return list.find(x=>x.name.toLowerCase()===w) || list.find(x=>x.name.toLowerCase().includes(w)||w.includes(x.name.toLowerCase())) || list[0] || null;
+  return list.find(x=>x.name.toLowerCase()===w) ||
+    list.find(x=>x.name.toLowerCase().includes(w)||w.includes(x.name.toLowerCase())) ||
+    list[0] || null;
 }
 async function getTeamHistory(team) {
   const obj=typeof team === "object" ? team : {name:String(team||"")};
-  let candidates=[obj.slug,obj.team_slug,obj.id,obj.team_id].filter(Boolean).map(String);
+  const directSlugs=[obj.slug,obj.team_slug].filter(Boolean).map(String);
+  const generatedSlugs=teamSlugCandidates(obj.name);
+  const candidates=[...new Set([...directSlugs,...generatedSlugs])];
 
   async function tryCandidates(list){
     for(const slug of [...new Set(list)]){
@@ -327,15 +359,18 @@ async function getTeamHistory(team) {
       if(cached) return cached;
       const attempts=[
         `/api/v1/fixtures/?sport=football&team=${encodeURIComponent(slug)}&status=finished&limit=30`,
-        `/api/v1/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`,
-        `/api/widget/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`
+        `/api/widget/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`,
+        `/api/v1/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`
       ];
       for(const endpoint of attempts){
         try{
           const data=await sportScoreRequest(endpoint);
           const fixtures=extractMatches(data);
           if(fixtures.length){ cacheSet(key,fixtures,30); return fixtures; }
-        }catch(e){ console.log("Team history attempt failed:",obj.name||slug,e.message); }
+        }catch(e){
+          const msg=String(e?.message||"");
+          if(!/404|not found/i.test(msg)) console.log("Team history lookup failed:",obj.name||slug,msg);
+        }
       }
     }
     return null;
@@ -346,17 +381,20 @@ async function getTeamHistory(team) {
 
   if(obj.name){
     try{
-      const found=findTeamSearchResult(
-        await sportScoreRequest(`/api/v1/search/?q=${encodeURIComponent(obj.name)}&sport=football&limit=6`),
-        obj.name
+      const searchData=await sportScoreRequest(
+        `/api/v1/search/?q=${encodeURIComponent(obj.name)}&sport=football&limit=20`
       );
+      const found=findTeamSearchResult(searchData,obj.name);
       if(found?.slug){
         fixtures=await tryCandidates([found.slug]);
         if(fixtures) return fixtures;
       }
-    }catch(e){ console.log("Team search failed:",obj.name,e.message); }
+    }catch(e){
+      console.log("Team search lookup failed:",obj.name,e.message);
+    }
   }
-  console.log("Team history unavailable:",obj.name||candidates[0]||"Unknown team");
+
+  console.log("Team history unavailable after slug/search lookup:",obj.name||candidates[0]||"Unknown team");
   return [];
 }
 
