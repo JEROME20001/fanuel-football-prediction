@@ -554,8 +554,25 @@ async function analyze(fixtureId,suppliedMatch,options={}){
       risk:statistical.risk || "Regular prediction"
     };
   }else{
-    try{ai=await runFootballAI({fixture:{id:fixture.id,slug:fixture.slug,date:fixture.starting_at,league:fixture.league,home:fixture.homeTeam,away:fixture.awayTeam},homeForm,awayForm,statistical});}
-    catch(e){console.log("OpenAI validation error:",e.message);ai={enabled:false,model:OPENAI_MODEL,status:"AI unavailable; statistical validation fallback",bestPick:"No Strong Pick",confidence:0,homeProbability:statistical.probabilities.home,drawProbability:statistical.probabilities.draw,awayProbability:statistical.probabilities.away,over25Probability:statistical.over25,bttsProbability:statistical.btts,correctScore:"N/A",analysis:"AI unavailable; calibrated statistical engine retained.",factors:["AI validation unavailable","Statistical ensemble retained","No invented AI signal"],risk:"AI unavailable"};}
+    try{
+      ai=await runFootballAI({
+        fixture:{
+          id:fixture.id,
+          slug:fixture.slug,
+          date:fixture.starting_at,
+          league:fixture.league,
+          home:fixture.homeTeam,
+          away:fixture.awayTeam
+        },
+        homeForm,
+        awayForm,
+        statistical
+      });
+      if(!ai?.enabled) throw new Error(ai?.status || "AI validation unavailable");
+    }catch(e){
+      console.log("OpenAI deep-analysis error:",e.message);
+      throw new Error("AI Deep Analysis unavailable: " + e.message);
+    }
   }
   const result=engine.buildFinal(statistical,ai,historyRows(),{home:homeForm,away:awayForm});
   result.form={home:homeForm,away:awayForm};
