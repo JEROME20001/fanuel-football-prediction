@@ -324,6 +324,34 @@ async function getSportyBetUpcoming(days=1,targetDate=null){
   cacheSet(cacheKey,result,2);
   return result;
 }
+async function refreshSportyBetEventOdds(events){
+  const src=Array.isArray(events)?events:[];
+  const refreshed=[];
+  for(const e of src.slice(0,50)){
+    const eventId=String(e?.eventId||"");
+    if(!eventId) continue;
+    const marketIds="1%2C10%2C11%2C18%2C29%2C30%2C35%2C36%2C37%2C60100%2C60200";
+    const apiPath="/api/"+SPORTYBET_REGION+"/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId="+marketIds+"&pageSize=100&pageNum=1&todayGames=false&timeline=720&_t="+Date.now();
+    try{
+      const response=await fetch(SPORTYBET_BASE+apiPath,{headers:{
+        Accept:"application/json",
+        "Content-Type":"application/json",
+        "Current-Country":SPORTYBET_REGION.toUpperCase()
+      }});
+      const raw=await response.text();
+      const data=JSON.parse(raw);
+      for(const t of (data?.data?.tournaments||[])){
+        for(const event of (t?.events||[])){
+          if(String(event?.eventId||"")!==eventId) continue;
+          refreshed.push({...e,odds:sportBetOddsForEvent(event)});
+        }
+      }
+    }catch(err){
+      console.log("SportyBet event odds refresh failed:",eventId,err.message);
+    }
+  }
+  return refreshed;
+}
 function markSportyBetAvailability(matches, sporty){
   const byKey=sporty?.byKey instanceof Map ? sporty.byKey : new Map();
   const sportyMatches=Array.isArray(sporty?.matches) ? sporty.matches : [];
