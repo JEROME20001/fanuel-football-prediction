@@ -1015,7 +1015,9 @@
               ${escapeHTML(slip.message || "No valid 5-pick combination was found.")}
             </div>
             <div style="margin-top:10px;font-size:12px;color:#89a7c2;">
-              Candidate selections checked: <b>${escapeHTML(slip.candidateCount ?? 0)}</b>.
+              Candidate selections checked: <b>${escapeHTML(slip.candidateCount ?? 0)}</b>.<br>
+              SportyBet events checked: <b>${escapeHTML(slip.sportyBetEventsChecked ?? 0)}</b> •
+              Events with odds: <b>${escapeHTML(slip.sportyBetEventsWithOdds ?? 0)}</b><br>
               Mfumo haujalazimisha kuongeza game yenye risk kubwa ili kufikisha 15.00.
             </div>
           </div>
