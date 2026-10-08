@@ -957,7 +957,9 @@
       () => worker()
     ));
 
-    await generateDailyOdds15(document.getElementById("matchDate").value, analyzedPredictions);\n\n    const matchContainer = document.getElementById("matches");
+    await generateDailyOdds15(document.getElementById("matchDate").value, analyzedPredictions);
+
+    const matchContainer = document.getElementById("matches");
     const orderedCards = Array.from(matchContainer.querySelectorAll(".match")).sort((a,b) =>
       Number(b.dataset.vip || 0) - Number(a.dataset.vip || 0) ||
       Number(b.dataset.bigLeague || 0) - Number(a.dataset.bigLeague || 0)
