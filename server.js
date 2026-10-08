@@ -163,11 +163,41 @@ function isTop150Fixture(home, away){ return isTop150Team(home) || isTop150Team(
 
 function sportBetMarketFlags(event){
   const flags={oneXTwo:false,draw:false,btts:false};
-  for(const market of event?.markets||[]){
-    const desc=String(market?.desc||"").toLowerCase();
-    if(desc==="1x2"||desc.includes("1x2")) flags.oneXTwo=(market.outcomes||[]).some(o=>o?.isActive!==false);
-    if(desc.includes("gg/ng")||desc.includes("btts")) flags.btts=(market.outcomes||[]).some(o=>o?.isActive!==false);
+  let sawMarket=false;
+  function walk(v){
+    if(!v || typeof v!=="object") return;
+    if(Array.isArray(v)){ v.forEach(walk); return; }
+
+    const text=Object.entries(v)
+      .filter(([k])=>/name|desc|title|market/i.test(k))
+      .map(([,val])=>String(val||""))
+      .join(" ")
+      .toLowerCase();
+
+    if(/(^|\\b)(1x2|1\\s*x\\s*2|match result|full time result)(\\b|$)/i.test(text)){
+      flags.oneXTwo=true;
+      sawMarket=true;
+    }
+    if(/(^|\\b)(gg\\s*\/\\s*ng|btts|both teams to score)(\\b|$)/i.test(text)){
+      flags.btts=true;
+      sawMarket=true;
+    }
+
+    if(Array.isArray(v.outcomes) && v.outcomes.length){
+      const active=v.outcomes.some(o=>o?.isActive!==false && o?.status!==0 && o?.status!=="0");
+      if(active && /1x2|match result|full time result/i.test(text)){ flags.oneXTwo=true; sawMarket=true; }
+      if(active && /gg\\s*\/\\s*ng|btts|both teams to score/i.test(text)){ flags.btts=true; sawMarket=true; }
+    }
+    for(const [k,val] of Object.entries(v)){
+      if(k!=="raw") walk(val);
+    }
   }
+  walk(event);
+
+  // SportyBet's football schedule endpoint is queried with the standard 1X2 and
+  // GG/NG market groups. If a returned event has no expanded market payload,
+  // treat 1X2/Draw as available rather than falsely rejecting the event.
+  if(!flags.oneXTwo && !sawMarket) flags.oneXTwo=true;
   flags.draw=flags.oneXTwo;
   return flags;
 }
