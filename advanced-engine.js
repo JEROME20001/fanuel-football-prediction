@@ -383,6 +383,9 @@ function vipSelection(prediction, ai) {
 
   const aiActive = Boolean(ai?.enabled);
   const sportBetAvailable = prediction?.sportyBetAvailable === true;
+  const sportBetMarkets = prediction?.sportyBetMarkets || {};
+  const sportBetOneXTwoAvailable = sportBetAvailable && sportBetMarkets.oneXTwo !== false;
+  const sportBetBttsAvailable = sportBetAvailable && sportBetMarkets.btts !== false;
   const aiPick = String(ai?.bestPick || "No Strong Pick");
   const agreement = Number(prediction?.ensemble?.agreement ?? 0);
   const distance = Number(prediction?.ensemble?.distributionDistance ?? 999);
@@ -405,13 +408,13 @@ function vipSelection(prediction, ai) {
     probability: round(topProbability, 1),
     margin: round(margin, 1),
     eligible:
-      sportBetAvailable && aiActive && usableData && sampleOK && venueSampleOK &&
+      sportBetOneXTwoAvailable && aiActive && usableData && sampleOK && venueSampleOK &&
       Number(prediction?.confidence || 0) >= 56 &&
       topProbability >= 52 && margin >= 6 &&
       agreement >= 75 && aiPick === topPick &&
       distance <= 14 && stabilityOK,
     criteria: {
-      sportBetAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      sportBetOneXTwoAvailable, sportBetBttsAvailable, sportBetAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
       confidenceMin56: Number(prediction?.confidence || 0) >= 56,
       probabilityMin52: topProbability >= 52,
       marginMin6: margin >= 6,
@@ -429,12 +432,12 @@ function vipSelection(prediction, ai) {
     probability: round(drawProb, 1),
     margin: round(drawEdge, 1),
     eligible:
-      sportBetAvailable && aiActive && usableData && sampleOK && venueSampleOK &&
+      sportBetOneXTwoAvailable && aiActive && usableData && sampleOK && venueSampleOK &&
       drawProb >= 29 && drawEdge >= 2 &&
       aiPick === "Draw" && agreement >= 75 &&
       distance <= 14 && stabilityOK,
     criteria: {
-      sportBetAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      sportBetOneXTwoAvailable, sportBetAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
       probabilityMin29: drawProb >= 29,
       drawEdgeMin2: drawEdge >= 2,
       aiDraw: aiPick === "Draw",
@@ -459,7 +462,7 @@ function vipSelection(prediction, ai) {
     edge: round(bttsEdge, 1),
     modelDistance: round(bttsDistance, 1),
     eligible:
-      sportBetAvailable && aiActive && usableData && sampleOK && venueSampleOK &&
+      sportBetBttsAvailable && aiActive && usableData && sampleOK && venueSampleOK &&
       bttsConfidence >= 56 && bttsEdge >= 6 &&
       aiBttsPick === bttsPick && bttsDistance <= 14 &&
       agreement >= 75 && stabilityOK,
@@ -504,7 +507,7 @@ function vipSelection(prediction, ai) {
       score: m.score
     })),
     reasons: Object.values(markets).filter(m=>!m.eligible).map(m=>m.market + ": rejected"),
-    criteria: { sportBetAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK }
+    criteria: { sportBetAvailable, sportBetOneXTwoAvailable, sportBetBttsAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK }
   };
 }
 
