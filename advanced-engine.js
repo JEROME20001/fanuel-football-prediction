@@ -392,8 +392,8 @@ function vipSelection(prediction, ai) {
   const homeVenueGames = Number(prediction?.form?.home?.homeGames || 0);
   const awayVenueGames = Number(prediction?.form?.away?.awayGames || 0);
   const highData = prediction?.dataQuality?.level === "high";
-  const sampleOK = homeGames >= 8 && awayGames >= 8;
-  const venueSampleOK = homeVenueGames >= 4 && awayVenueGames >= 4;
+  const sampleOK = homeGames >= 5 && awayGames >= 5;
+  const venueSampleOK = (homeVenueGames >= 2 || homeGames >= 6) && (awayVenueGames >= 2 || awayGames >= 6);
 
   const oneXTwo = {
     market: "1X2",
@@ -408,12 +408,12 @@ function vipSelection(prediction, ai) {
       distance <= 8 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
     criteria: {
       aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
-      confidenceMin80: Number(prediction?.confidence || 0) >= 80,
-      probabilityMin60: topProbability >= 60,
-      marginMin18: margin >= 18,
-      agreementMin92: agreement >= 92,
+      confidenceMin65: Number(prediction?.confidence || 0) >= 80,
+      probabilityMin55: topProbability >= 60,
+      marginMin10: margin >= 18,
+      agreementMin85: agreement >= 92,
       aiSamePick: aiPick === topPick,
-      modelDistanceMax5: distance <= 5,
+      modelDistanceMax8: distance <= 5,
       stable
     }
   };
@@ -431,11 +431,11 @@ function vipSelection(prediction, ai) {
       distance <= 8 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
     criteria: {
       aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
-      probabilityMin38: drawProb >= 38,
-      drawEdgeMin8: drawEdge >= 8,
+      probabilityMin33: drawProb >= 38,
+      drawEdgeMin5: drawEdge >= 8,
       aiDraw: aiPick === "Draw",
-      agreementMin92: agreement >= 92,
-      modelDistanceMax5: distance <= 5,
+      agreementMin85: agreement >= 92,
+      modelDistanceMax8: distance <= 5,
       stable
     }
   };
@@ -461,11 +461,11 @@ function vipSelection(prediction, ai) {
       agreement >= 85 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
     criteria: {
       aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
-      confidenceMin65: bttsConfidence >= 65,
-      edgeMin15: bttsEdge >= 15,
+      confidenceMin60: bttsConfidence >= 60,
+      edgeMin10: bttsEdge >= 10,
       aiSameSignal: aiBttsPick === bttsPick,
-      bttsModelDistanceMax5: bttsDistance <= 5,
-      agreementMin92: agreement >= 92,
+      bttsModelDistanceMax8: bttsDistance <= 5,
+      agreementMin85: agreement >= 92,
       stable
     }
   };
