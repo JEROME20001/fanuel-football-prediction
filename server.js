@@ -30,7 +30,7 @@ function loadDB() {
     };
   } catch (e) {
     console.log("DB load error:", e.message);
-    return { predictions: [], results: [] };
+    return { predictions: [], results: [], dailyOdds15: [] };
   }
 }
 function saveDB(db) {
