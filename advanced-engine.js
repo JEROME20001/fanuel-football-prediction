@@ -557,23 +557,28 @@ function vipSelection(prediction, ai) {
   for (const market of Object.values(markets)) market.score = scoreFor(market);
 
   const eligibleWithScores = Object.values(markets).filter(m => m.eligible).sort((a,b)=>b.score-a.score);
-  const best = eligibleWithScores[0] || null;
 
-  const comboOneXTwo = oneXTwo.eligible && oneXTwo.pick !== "Draw";
+  // VIP must always be a directional result + GG decision.
+  // A result-only Home/Away pick is NOT promoted to VIP.
+  const comboOneXTwo = oneXTwo.eligible && ["Home Win","Away Win"].includes(oneXTwo.pick);
   const comboBtts = btts.eligible;
   const comboEligible = comboOneXTwo && comboBtts;
   const comboPick = comboEligible ? oneXTwo.pick + " + " + btts.pick : null;
+  const comboScore = comboEligible ? round((oneXTwo.score + btts.score) / 2, 1) : 0;
+  const comboProbability = comboEligible ? round(Math.min(oneXTwo.probability, btts.probability), 1) : 0;
 
   return {
-    eligible: eligibleWithScores.length > 0,
-    tier: eligibleWithScores.length ? (eligibleWithScores.some(m => m.strength === "STRONG") ? "VIP STRONG" : "VIP COVERAGE") : "REJECTED",
-    primaryMarket: comboEligible ? "1X2 + BTTS" : (best?.market || null),
-    primaryPick: comboPick || best?.pick || null,
+    eligible: comboEligible,
+    tier: comboEligible
+      ? (oneXTwo.strength === "STRONG" && btts.strength === "STRONG" ? "VIP STRONG" : "VIP COVERAGE")
+      : "REJECTED",
+    primaryMarket: comboEligible ? "1X2 + BTTS" : null,
+    primaryPick: comboPick,
     combinedPick: comboPick,
     combinedEligible: comboEligible,
-    score: best?.score || 0,
-    topProbability: best?.probability || 0,
-    probabilityMargin: best?.margin ?? best?.edge ?? 0,
+    score: comboScore,
+    topProbability: comboProbability,
+    probabilityMargin: comboEligible ? round(oneXTwo.margin ?? oneXTwo.edge ?? 0, 1) : 0,
     markets,
     eligibleMarkets: eligibleWithScores.map(m => ({
       market: m.market,
