@@ -280,12 +280,13 @@ async function getSportyBetUpcoming(days=1,targetDate=null){
             : null;
           if(targetDate && eventDate !== targetDate) continue;
           const flags=sportBetMarketFlags(event);
+          const odds=sportBetOddsForEvent(event);
           all.push({
             eventId,homeTeam:home,awayTeam:away,
             league:tournament?.name||event?.tournamentName||"Football",
             category:tournament?.categoryName||"",
             starting_at:ts?new Date(ts).toISOString():null,
-            oneXTwo:flags.oneXTwo,draw:flags.draw,btts:flags.btts,
+            oneXTwo:flags.oneXTwo,draw:flags.draw,btts:flags.btts,odds,
             bookmaker:"SportyBet",bookmakerRegion:SPORTYBET_REGION
           });
         }
@@ -331,6 +332,7 @@ function markSportyBetAvailability(matches, sporty){
       draw:Boolean(sb.draw),
       btts:Boolean(sb.btts)
     }:{oneXTwo:false,draw:false,btts:false};
+    m.sportyBetOdds=sb?.odds||{oneXTwo:[],btts:[],doubleChance:[],totals:{}};
     m.bookmaker=sb?"SportyBet":null;
     return m;
   });
