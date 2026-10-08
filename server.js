@@ -208,7 +208,12 @@ function sportBetOddsForEvent(event){
   const marketsRaw=Array.isArray(event?.markets)?event.markets:
     Array.isArray(event?.market)?event.market:
     (event?.markets&&typeof event.markets==="object"?Object.values(event.markets):[]);
-  const activeValue=v=>v!==false&&v!==0&&v!=="0"&&String(v).toLowerCase()!=="false"&&String(v).toLowerCase()!=="suspended";
+  const activeValue=v=>{
+    if(v===undefined||v===null) return true;
+    const s=String(v).toLowerCase();
+    if(v===false||s==="false"||s==="suspended"||s==="closed"||s==="inactive"||s==="cancelled") return false;
+    return true;
+  };
   const normalizeMarketId=m=>String(m?.id??m?.marketId??m?.marketID??"");
   const normalizeDesc=m=>String(m?.desc??m?.description??m?.name??m?.marketName??"").toLowerCase();
   const normalizeOutcomes=m=>Array.isArray(m?.outcomes)?m.outcomes:
