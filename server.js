@@ -849,6 +849,7 @@ async function buildDailyOdds15(date,predictions){
   if(!best){
     return {
       eligible:false,date,selections:[],totalOdds:null,...diag,
+      candidatePreview:all.slice(0,10).map((x,i)=>({...x,number:i+1})),
       message:"Candidates zipo, lakini hakuna combination ya selections 5 inayofika 12.00–18.00 karibu na target 15.00 bila kutumia risk kubwa. Mfumo haujalazimisha slip."
     };
   }
