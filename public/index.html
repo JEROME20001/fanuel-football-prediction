@@ -697,7 +697,7 @@
       );
 
       // Start prediction automatically as soon as matches are displayed.
-      const deepCandidates = matches.filter(m => m.vipCandidate === true).slice(0, 60);
+      const deepCandidates = matches.filter(m => m.vipCandidate === true).slice(0, 150);
       autoAnalyzeMatches(deepCandidates);
 
     } catch (error) {
@@ -905,16 +905,16 @@
   async function autoAnalyzeMatches(matches) {
     // Adaptive deep screening:
     // Start fast, then continue only when more VIP coverage is needed.
-    const pool = matches.slice(0, 60);
-    const batchSize = 16;
+    const pool = matches.slice(0, 150);
+    const batchSize = 20;
     const concurrency = 8;
-    const targetVip = 3;
+    const targetVip = 7;
     let completed = 0;
     let vipCount = 0;
     let batchStart = 0;
 
     showStatus(
-      "🧠 VIP deep screening started: 0/" + pool.length + " candidates available. Starting with the fastest batch.",
+      "🧠 VIP deep screening started: 0/" + pool.length + " Top-150 SportyBet candidates available. Target: 7 VIP picks.",
       "success"
     );
 
@@ -977,7 +977,7 @@
         ? "👑 VIP deep screening completed: " + vipCount +
           " VIP pick" + (vipCount === 1 ? "" : "s") +
           " found. The scanner stops early after reaching the VIP target."
-        : "🛑 No Top-150 SportyBet match qualified for VIP on the selected date. All fixtures remain visible; the system did not force a weak VIP prediction.",
+        : "🛑 No Top-150 SportyBet match qualified for VIP on the selected date. All fixtures remain visible; the system did not force an unsupported VIP prediction.",
       vipCount ? "success" : "error"
     );
 
