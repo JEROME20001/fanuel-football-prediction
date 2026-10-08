@@ -16,6 +16,9 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 const MAX_AI_DAILY = Math.max(1, Number(process.env.MAX_AI_DAILY || 150));
 const VIP_CANDIDATES = Math.max(10, Math.min(150, Number(process.env.VIP_CANDIDATES || 150)));
 const DEEP_ANALYSIS_LIMIT = Math.max(20, Math.min(150, Number(process.env.DEEP_ANALYSIS_LIMIT || 150)));
+let AI_BILLING_BLOCKED_UNTIL = 0;
+let AI_BILLING_BLOCK_REASON = "";
+let SPORTSCORE_503_BLOCKED_UNTIL = 0;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -63,6 +66,7 @@ function cacheSet(key, value, minutes) {
 }
 
 async function sportScoreRequest(apiPath) {
+  if(Date.now() < SPORTSCORE_503_BLOCKED_UNTIL) throw new Error("SportScore temporary unavailable (HTTP 503).");
   const response = await fetch(SPORTSCORE_BASE + apiPath, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
   const raw = await response.text();
   let data;
@@ -594,8 +598,10 @@ function teamForm(team, fixtures){
   return {games:last.length,matches:last.length,wins,draws,losses,goalsFor:gf/last.length,goalsAgainst:ga/last.length,weightedPoints:ws?wp/ws:1.35,weightedGoalsFor:ws?wgf/ws:gf/last.length,weightedGoalsAgainst:ws?wga/ws:ga/last.length,goalDiff:gf-ga,strengthRating:Math.round(rating*10)/10,homeGames:home.length,awayGames:away.length,homeGoalsFor:h?.gf??1.35,homeGoalsAgainst:h?.ga??1.1,awayGoalsFor:a?.gf??1.25,awayGoalsAgainst:a?.ga??1.15,form:last.map(x=>x.result).join(""),opponentRatings:[]};
 }
 
+function aiBillingBlocked(){return Date.now()<AI_BILLING_BLOCKED_UNTIL;}
 function aiUsageToday(){const today=new Date().toISOString().slice(0,10);const used=db.predictions.filter(p=>String(p.createdAt||"").slice(0,10)===today&&p.ai?.enabled).length;return {date:today,used,limit:MAX_AI_DAILY,remaining:Math.max(0,MAX_AI_DAILY-used)};}
 async function runFootballAI(context){
+  if(aiBillingBlocked()) return {enabled:false,model:OPENAI_MODEL,status:"OpenAI billing unavailable: "+AI_BILLING_BLOCK_REASON,bestPick:"No Strong Pick",confidence:0,homeProbability:context.statistical.probabilities.home,drawProbability:context.statistical.probabilities.draw,awayProbability:context.statistical.probabilities.away,over25Probability:context.statistical.over25,bttsProbability:context.statistical.btts,correctScore:"N/A",factors:["OpenAI billing/credits unavailable","AI requests paused temporarily"],analysis:"OpenAI billing/credits error detected; AI requests paused to prevent repeated failed calls.",risk:"AI unavailable"};
   if(!OPENAI_API_KEY) return {enabled:false,model:null,status:"OPENAI_API_KEY haijawekwa.",bestPick:"No Strong Pick",confidence:0,homeProbability:context.statistical.probabilities.home,drawProbability:context.statistical.probabilities.draw,awayProbability:context.statistical.probabilities.away,over25Probability:context.statistical.over25,bttsProbability:context.statistical.btts,correctScore:"N/A",factors:[],analysis:"AI haijawezeshwa; statistical engine imetumika.",risk:"AI unavailable"};
   const usage=aiUsageToday();
   if(usage.used>=usage.limit) return {enabled:false,model:OPENAI_MODEL,status:"AI daily budget reached",bestPick:"No Strong Pick",confidence:0,homeProbability:context.statistical.probabilities.home,drawProbability:context.statistical.probabilities.draw,awayProbability:context.statistical.probabilities.away,over25Probability:context.statistical.over25,bttsProbability:context.statistical.btts,correctScore:"N/A",factors:["Daily AI limit reached","Statistical engine retained","Credits protected"],analysis:"AI daily limit reached; statistical engine retained.",risk:"AI budget limit",usage};
@@ -603,7 +609,14 @@ async function runFootballAI(context){
   const prompt={role:"system",content:`You are Fanuel Football Prediction AI Validator. You are NOT the primary calculator. Validate the supplied statistical model. Use only supplied football data. Never invent injuries, odds, news, form or results. Check home/away strength, recent form, goal profile, sample size and uncertainty. If evidence conflicts or is too weak, return No Strong Pick. Do not force a winner. Your probabilities are an independent validation signal and must be realistic, not extreme without evidence. Return concise factual reasoning.`};
   const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+OPENAI_API_KEY},body:JSON.stringify({model:OPENAI_MODEL,reasoning:{effort:"high"},input:[prompt,{role:"user",content:JSON.stringify(context)}],text:{format:{type:"json_schema",name:"fanuel_football_validator",strict:true,schema}},store:false})});
   const raw=await response.text(); let data; try{data=JSON.parse(raw);}catch{throw new Error("OpenAI response is not JSON. HTTP "+response.status);}
-  if(!response.ok) throw new Error(data?.error?.message||("OpenAI HTTP "+response.status));
+  if(!response.ok){
+    const apiError=String(data?.error?.message||("OpenAI HTTP "+response.status));
+    if(/no credits|insufficient_quota|credit|billing|quota/i.test(apiError)){
+      AI_BILLING_BLOCK_REASON=apiError;
+      AI_BILLING_BLOCKED_UNTIL=Date.now()+10*60*1000;
+    }
+    throw new Error(apiError);
+  }
   const text=data.output_text||data.output?.flatMap(x=>x.content||[]).filter(x=>x.type==="output_text").map(x=>x.text).join("")||""; if(!text) throw new Error("OpenAI haikurudisha analysis.");
   let ai; try{ai=JSON.parse(text);}catch{throw new Error("AI output haikuwa JSON.");}
   return {enabled:true,model:OPENAI_MODEL,status:"AI validation active",...ai};
@@ -882,8 +895,8 @@ function calibrationBuckets(rows){const b={"50-59":{count:0,correct:0,avgConfide
 
 async function api(req,res,url){
   if(url.pathname==="/api/health")return sendJSON(res,200,{ok:true,provider:"SportScore",tokenConfigured:true,aiConfigured:Boolean(OPENAI_API_KEY),aiModel:OPENAI_MODEL,vipOnly:false,bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,dailyOdds15Enabled:true,vipCandidates:VIP_CANDIDATES,service:"Fanuel Football Prediction",engine:"v4-multi-model-calibrated",serverTime:new Date().toISOString()});
-  if(url.pathname==="/api/ai-health")return sendJSON(res,200,{ok:true,configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,message:OPENAI_API_KEY?"OpenAI football AI is configured.":"OPENAI_API_KEY haijawekwa kwenye Render."});
-  if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length,storedTotal:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length-rows.length)},calibrationReady:rows.length>=10,vipOnly:false,bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,dailyOdds15Enabled:true,vipCandidates:VIP_CANDIDATES,vipCriteria:{markets:["1X2","DRAW","BTTS"],aiActive:true,bookmaker:"SportyBet",dataQuality:["HIGH","MEDIUM"],minimumSample:3,venueFallback:true,oneXTwo:{confidenceMin:56,topProbabilityMin:52,marginMin:6,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"],requiresSportyBet1X2:true},draw:{probabilityMin:29,drawEdgeMin:2,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"]},btts:{confidenceMin:56,edgeMin:6,modelDistanceMax:14,agreementMin:75,stability:["STABLE","MODERATE"],requiresSportyBetGGNG:true}},engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","VIP gate","correct-score distribution"],oddsUsed:false});}
+  if(url.pathname==="/api/ai-health")return sendJSON(res,200,{ok:true,configured:Boolean(OPENAI_API_KEY),operational:Boolean(OPENAI_API_KEY&&!aiBillingBlocked()),blockedUntil:aiBillingBlocked()?new Date(AI_BILLING_BLOCKED_UNTIL).toISOString():null,blockReason:aiBillingBlocked()?AI_BILLING_BLOCK_REASON:"",model:OPENAI_MODEL,message:!OPENAI_API_KEY?"OPENAI_API_KEY haijawekwa kwenye Render.":aiBillingBlocked()?"OpenAI billing/credits unavailable; AI requests paused temporarily.":"OpenAI football AI is configured."});
+  if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),operational:Boolean(OPENAI_API_KEY&&!aiBillingBlocked()),blocked:aiBillingBlocked(),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length,storedTotal:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length-rows.length)},calibrationReady:rows.length>=10,vipOnly:false,bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,dailyOdds15Enabled:true,vipCandidates:VIP_CANDIDATES,vipCriteria:{markets:["1X2","DRAW","BTTS"],aiActive:true,bookmaker:"SportyBet",dataQuality:["HIGH","MEDIUM"],minimumSample:3,venueFallback:true,oneXTwo:{confidenceMin:56,topProbabilityMin:52,marginMin:6,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"],requiresSportyBet1X2:true},draw:{probabilityMin:29,drawEdgeMin:2,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"]},btts:{confidenceMin:56,edgeMin:6,modelDistanceMax:14,agreementMin:75,stability:["STABLE","MODERATE"],requiresSportyBetGGNG:true}},engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","VIP gate","correct-score distribution"],oddsUsed:false});}
   if(url.pathname==="/api/upcoming"){
     const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);
     const days=1;
