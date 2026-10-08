@@ -201,6 +201,11 @@ function sportBetMarketFlags(event){
   flags.draw=flags.oneXTwo;
   return flags;
 }
+function sportBetTimestamp(value){
+  const n=Number(value);
+  if(!Number.isFinite(n) || n<=0) return null;
+  return n < 100000000000 ? n * 1000 : n;
+}
 async function getSportyBetUpcoming(days=1,targetDate=null){
   if(!SPORTYBET_ENABLED) return {enabled:false,matches:[],byKey:new Map(),count:0,message:"SportyBet filter disabled."};
   const cacheKey="sportybet:upcoming:"+SPORTYBET_REGION+":"+(targetDate||"all")+":"+days;
@@ -226,17 +231,17 @@ async function getSportyBetUpcoming(days=1,targetDate=null){
           const away=event?.awayTeamName||event?.away_team_name;
           const eventId=String(event?.eventId||event?.id||"");
           if(!home||!away||!eventId) continue;
-          const eventDate = Number.isFinite(Number(event?.estimateStartTime||event?.startTime))
-            ? new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Dar_es_Salaam"}).format(new Date(Number(event.estimateStartTime||event.startTime)))
+          const ts=sportBetTimestamp(event?.estimateStartTime ?? event?.startTime);
+          const eventDate = ts
+            ? new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Dar_es_Salaam"}).format(new Date(ts))
             : null;
           if(targetDate && eventDate !== targetDate) continue;
-          const ts=Number(event?.estimateStartTime||event?.startTime||0);
           const flags=sportBetMarketFlags(event);
           all.push({
             eventId,homeTeam:home,awayTeam:away,
             league:tournament?.name||event?.tournamentName||"Football",
             category:tournament?.categoryName||"",
-            starting_at:Number.isFinite(ts)&&ts?new Date(ts).toISOString():null,
+            starting_at:ts?new Date(ts).toISOString():null,
             oneXTwo:flags.oneXTwo,draw:flags.draw,btts:flags.btts,
             bookmaker:"SportyBet",bookmakerRegion:SPORTYBET_REGION
           });
