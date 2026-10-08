@@ -536,43 +536,24 @@ async function analyze(fixtureId,suppliedMatch,options={}){
   statistical.sportyBetMarkets = fixture.sportyBetMarkets || null;
   statistical.top150Team = fixture.top150Team === true;
   let ai;
-  if(!deepAnalysis){
-    ai={
-      enabled:false,
-      model:OPENAI_MODEL,
-      status:"Regular statistical prediction",
-      bestPick:statistical.pick || "No Strong Pick",
-      confidence:Number(statistical.confidence||0),
-      homeProbability:statistical.probabilities.home,
-      drawProbability:statistical.probabilities.draw,
-      awayProbability:statistical.probabilities.away,
-      over25Probability:statistical.over25,
-      bttsProbability:statistical.btts,
-      correctScore:statistical.correctScore||"N/A",
-      factors:["Regular statistical model","Historical form and goals used","AI deep validation reserved for VIP candidates"],
-      analysis:"Regular prediction generated. This match is not being forced into VIP.",
-      risk:statistical.risk || "Regular prediction"
-    };
-  }else{
-    try{
-      ai=await runFootballAI({
-        fixture:{
-          id:fixture.id,
-          slug:fixture.slug,
-          date:fixture.starting_at,
-          league:fixture.league,
-          home:fixture.homeTeam,
-          away:fixture.awayTeam
-        },
-        homeForm,
-        awayForm,
-        statistical
-      });
-      if(!ai?.enabled) throw new Error(ai?.status || "AI validation unavailable");
-    }catch(e){
-      console.log("OpenAI deep-analysis error:",e.message);
-      throw new Error("AI Deep Analysis unavailable: " + e.message);
-    }
+  try{
+    ai=await runFootballAI({
+      fixture:{
+        id:fixture.id,
+        slug:fixture.slug,
+        date:fixture.starting_at,
+        league:fixture.league,
+        home:fixture.homeTeam,
+        away:fixture.awayTeam
+      },
+      homeForm,
+      awayForm,
+      statistical
+    });
+    if(!ai?.enabled) throw new Error(ai?.status || "AI validation unavailable");
+  }catch(e){
+    console.log("OpenAI deep-analysis error:",e.message);
+    throw new Error("AI Deep Analysis unavailable: " + e.message);
   }
   const result=engine.buildFinal(statistical,ai,historyRows(),{home:homeForm,away:awayForm});
   result.form={home:homeForm,away:awayForm};
