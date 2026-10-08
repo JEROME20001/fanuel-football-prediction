@@ -15,7 +15,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 const MAX_AI_DAILY = Math.max(1, Number(process.env.MAX_AI_DAILY || 150));
 const VIP_CANDIDATES = Math.max(10, Math.min(150, Number(process.env.VIP_CANDIDATES || 150)));
-const DEEP_ANALYSIS_LIMIT = Math.max(12, Math.min(40, Number(process.env.DEEP_ANALYSIS_LIMIT || 30)));
+const DEEP_ANALYSIS_LIMIT = Math.max(20, Math.min(150, Number(process.env.DEEP_ANALYSIS_LIMIT || 150)));
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -432,12 +432,13 @@ async function analyze(fixtureId,suppliedMatch){
   statistical.bookmaker = fixture.sportyBetAvailable ? "SportyBet" : null;
   statistical.sportyBetEventId = fixture.sportyBetEventId || null;
   statistical.sportyBetMarkets = fixture.sportyBetMarkets || null;
+  statistical.top150Team = fixture.top150Team === true;
   let ai;
   try{ai=await runFootballAI({fixture:{id:fixture.id,slug:fixture.slug,date:fixture.starting_at,league:fixture.league,home:fixture.homeTeam,away:fixture.awayTeam},homeForm,awayForm,statistical});}
   catch(e){console.log("OpenAI validation error:",e.message);ai={enabled:false,model:OPENAI_MODEL,status:"AI unavailable; statistical validation fallback",bestPick:"No Strong Pick",confidence:0,homeProbability:statistical.probabilities.home,drawProbability:statistical.probabilities.draw,awayProbability:statistical.probabilities.away,over25Probability:statistical.over25,bttsProbability:statistical.btts,correctScore:"N/A",analysis:"AI unavailable; calibrated statistical engine retained.",factors:["AI validation unavailable","Statistical ensemble retained","No invented AI signal"],risk:"AI unavailable"};}
   const result=engine.buildFinal(statistical,ai,historyRows(),{home:homeForm,away:awayForm});
   result.form={home:homeForm,away:awayForm};
-  result.provider="SportScore"; result.usesOdds=false; result.predictionSnapshot={probabilities:{...result.probabilities},over25:result.over25,btts:result.btts,confidence:result.confidence,league:fixture.league||null};
+  result.provider="SportScore"; result.usesOdds=false; result.top150Team = fixture.top150Team === true; result.predictionSnapshot={probabilities:{...result.probabilities},over25:result.over25,btts:result.btts,confidence:result.confidence,league:fixture.league||null};
   result.createdAt=new Date().toISOString();
   attachAI(result,ai);
   // VIP mode: qualifying matches are stored; non-qualifying fixtures remain visible in the frontend.
