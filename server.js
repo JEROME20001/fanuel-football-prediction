@@ -380,8 +380,13 @@ async function analyze(fixtureId,suppliedMatch){
   const existingPrediction = [...db.predictions].reverse().find(p => String(p.fixtureId) === String(fixture.id));
   if (existingPrediction) return {...existingPrediction, duplicateRequest:true, duplicateOfCreatedAt:existingPrediction.createdAt};
   const [hh,ah]=await Promise.all([getTeamHistory(fixture.homeTeam),getTeamHistory(fixture.awayTeam)]);
+  fixture.sportyBetAvailable = fixture.sportyBetAvailable === true || fixture.bookmaker === "SportyBet";
   const homeForm=teamForm(fixture.homeTeam,hh), awayForm=teamForm(fixture.awayTeam,ah);
   const statistical=engine.buildStatisticalModel({id:fixture.id,teams:{home:fixture.homeTeam,away:fixture.awayTeam},league:fixture.league},homeForm,awayForm);
+  statistical.sportyBetAvailable = fixture.sportyBetAvailable === true;
+  statistical.bookmaker = fixture.sportyBetAvailable ? "SportyBet" : null;
+  statistical.sportyBetEventId = fixture.sportyBetEventId || null;
+  statistical.sportyBetMarkets = fixture.sportyBetMarkets || null;
   let ai;
   try{ai=await runFootballAI({fixture:{id:fixture.id,slug:fixture.slug,date:fixture.starting_at,league:fixture.league,home:fixture.homeTeam,away:fixture.awayTeam},homeForm,awayForm,statistical});}
   catch(e){console.log("OpenAI validation error:",e.message);ai={enabled:false,model:OPENAI_MODEL,status:"AI unavailable; statistical validation fallback",bestPick:"No Strong Pick",confidence:0,homeProbability:statistical.probabilities.home,drawProbability:statistical.probabilities.draw,awayProbability:statistical.probabilities.away,over25Probability:statistical.over25,bttsProbability:statistical.btts,correctScore:"N/A",analysis:"AI unavailable; calibrated statistical engine retained.",factors:["AI validation unavailable","Statistical ensemble retained","No invented AI signal"],risk:"AI unavailable"};}
