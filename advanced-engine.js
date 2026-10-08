@@ -391,9 +391,10 @@ function vipSelection(prediction, ai) {
   const awayGames = Number(prediction?.dataQuality?.awayGames || prediction?.form?.away?.games || 0);
   const homeVenueGames = Number(prediction?.form?.home?.homeGames || 0);
   const awayVenueGames = Number(prediction?.form?.away?.awayGames || 0);
-  const highData = prediction?.dataQuality?.level === "high";
-  const sampleOK = homeGames >= 5 && awayGames >= 5;
-  const venueSampleOK = (homeVenueGames >= 2 || homeGames >= 6) && (awayVenueGames >= 2 || awayGames >= 6);
+  const dataLevel = String(prediction?.dataQuality?.level || "").toLowerCase();
+  const usableData = dataLevel === "high" || dataLevel === "medium";
+  const sampleOK = homeGames >= 3 && awayGames >= 3;
+  const venueSampleOK = (homeVenueGames >= 2 || homeGames >= 5) && (awayVenueGames >= 2 || awayGames >= 5);
 
   const oneXTwo = {
     market: "1X2",
@@ -401,19 +402,19 @@ function vipSelection(prediction, ai) {
     probability: round(topProbability, 1),
     margin: round(margin, 1),
     eligible:
-      aiActive && highData && sampleOK && venueSampleOK &&
-      Number(prediction?.confidence || 0) >= 65 &&
-      topProbability >= 55 && margin >= 10 &&
-      agreement >= 85 && aiPick === topPick &&
-      distance <= 8 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
+      aiActive && usableData && sampleOK && venueSampleOK &&
+      Number(prediction?.confidence || 0) >= 58 &&
+      topProbability >= 53 && margin >= 7 &&
+      agreement >= 80 && aiPick === topPick &&
+      distance <= 12 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
     criteria: {
-      aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
-      confidenceMin65: Number(prediction?.confidence || 0) >= 80,
-      probabilityMin55: topProbability >= 60,
-      marginMin10: margin >= 18,
-      agreementMin85: agreement >= 92,
+      aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      confidenceMin58: Number(prediction?.confidence || 0) >= 58,
+      probabilityMin53: topProbability >= 53,
+      marginMin7: margin >= 7,
+      agreementMin80: agreement >= 80,
       aiSamePick: aiPick === topPick,
-      modelDistanceMax8: distance <= 5,
+      modelDistanceMax12: distance <= 12,
       stable
     }
   };
@@ -425,17 +426,17 @@ function vipSelection(prediction, ai) {
     probability: round(drawProb, 1),
     margin: round(drawEdge, 1),
     eligible:
-      aiActive && highData && sampleOK && venueSampleOK &&
-      drawProb >= 33 && drawEdge >= 5 &&
-      aiPick === "Draw" && agreement >= 85 &&
-      distance <= 8 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
+      aiActive && usableData && sampleOK && venueSampleOK &&
+      drawProb >= 30 && drawEdge >= 3 &&
+      aiPick === "Draw" && agreement >= 80 &&
+      distance <= 12 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
     criteria: {
       aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
-      probabilityMin33: drawProb >= 38,
-      drawEdgeMin5: drawEdge >= 8,
+      probabilityMin30: drawProb >= 30,
+      drawEdgeMin3: drawEdge >= 3,
       aiDraw: aiPick === "Draw",
-      agreementMin85: agreement >= 92,
-      modelDistanceMax8: distance <= 5,
+      agreementMin80: agreement >= 80,
+      modelDistanceMax12: distance <= 12,
       stable
     }
   };
@@ -455,17 +456,17 @@ function vipSelection(prediction, ai) {
     edge: round(bttsEdge, 1),
     modelDistance: round(bttsDistance, 1),
     eligible:
-      aiActive && highData && sampleOK && venueSampleOK &&
-      bttsConfidence >= 60 && bttsEdge >= 10 &&
-      aiBttsPick === bttsPick && bttsDistance <= 8 &&
-      agreement >= 85 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
+      aiActive && usableData && sampleOK && venueSampleOK &&
+      bttsConfidence >= 58 && bttsEdge >= 8 &&
+      aiBttsPick === bttsPick && bttsDistance <= 12 &&
+      agreement >= 80 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
     criteria: {
       aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
-      confidenceMin60: bttsConfidence >= 60,
-      edgeMin10: bttsEdge >= 10,
+      confidenceMin58: bttsConfidence >= 58,
+      edgeMin8: bttsEdge >= 8,
       aiSameSignal: aiBttsPick === bttsPick,
-      bttsModelDistanceMax8: bttsDistance <= 5,
-      agreementMin85: agreement >= 92,
+      bttsModelDistanceMax12: bttsDistance <= 12,
+      agreementMin80: agreement >= 80,
       stable
     }
   };
@@ -500,7 +501,7 @@ function vipSelection(prediction, ai) {
       score: m.score
     })),
     reasons: Object.values(markets).filter(m=>!m.eligible).map(m=>m.market + ": rejected"),
-    criteria: { aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK }
+    criteria: { aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK }
   };
 }
 
