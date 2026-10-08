@@ -647,9 +647,11 @@
         We display ALL matches.
       */
 
-      const vipCandidateTotal = matches.filter(m => m.vipCandidate === true).length;
+      const vipCandidateTotal = Number(data.vipCandidateCount ?? matches.filter(m => m.vipCandidate === true).length);
+      const sportyBetTotal = Number(data.sportyBetCount ?? matches.filter(m => m.sportyBetAvailable === true).length);
+      const top150Total = Number(data.top150Count ?? matches.filter(m => m.top150Team === true).length);
       count.textContent =
-        `${matches.length} matches on ${date} • ${vipCandidateTotal} SportyBet/Top-150 candidates • adaptive VIP scan`;
+        `${matches.length} matches on ${date} • SportyBet: ${sportyBetTotal} • Top-150: ${top150Total} • VIP candidates: ${vipCandidateTotal}`;
 
       if (!matches.length) {
 
@@ -669,8 +671,10 @@
       }
 
       showStatus(
-        `🧠 Screening selected-day shortlist • Top 150 team pool + SportyBet...`,
-        "success"
+        vipCandidateTotal
+          ? `🧠 Screening selected-day shortlist • ${vipCandidateTotal} Top-150 SportyBet candidates • daily VIP target: 7.`
+          : `⚠️ SportyBet/Top-150 candidate count is 0. The system will not create artificial VIP picks.`,
+        vipCandidateTotal ? "success" : "error"
       );
 
       container.innerHTML = "";
