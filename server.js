@@ -506,7 +506,8 @@ async function runFootballAI(context){
 }
 function historyRows(){return db.results.map(r=>{const p=db.predictions.find(x=>String(x.fixtureId)===String(r.fixtureId));return p&&(p.vip?.eligible===true||p.vvip?.eligible===true)?{prediction:p,result:r}:null;}).filter(Boolean);}
 function attachAI(result,ai){result.ai={enabled:Boolean(ai.enabled),model:ai.model||null,status:ai.status||"",bestPick:ai.bestPick||"No Strong Pick",confidence:Number(ai.confidence||0),suggestedCorrectScore:result.decisionStatus==="NO_STRONG_PICK"?"N/A":(ai.correctScore||"N/A"),analysis:result.decisionStatus==="NO_STRONG_PICK"&&ai.enabled?"No Strong Pick: models do not justify forcing a directional winner.":(ai.analysis||""),factors:Array.isArray(ai.factors)?ai.factors:[],risk:result.risk};return result;}
-async function analyze(fixtureId,suppliedMatch){
+async function analyze(fixtureId,suppliedMatch,options={}){
+  const deepAnalysis = options.deepAnalysis !== false;
   let fixture;
   if(suppliedMatch&&typeof suppliedMatch==="object"){
     const raw=suppliedMatch.raw||suppliedMatch;
@@ -535,8 +536,27 @@ async function analyze(fixtureId,suppliedMatch){
   statistical.sportyBetMarkets = fixture.sportyBetMarkets || null;
   statistical.top150Team = fixture.top150Team === true;
   let ai;
-  try{ai=await runFootballAI({fixture:{id:fixture.id,slug:fixture.slug,date:fixture.starting_at,league:fixture.league,home:fixture.homeTeam,away:fixture.awayTeam},homeForm,awayForm,statistical});}
-  catch(e){console.log("OpenAI validation error:",e.message);ai={enabled:false,model:OPENAI_MODEL,status:"AI unavailable; statistical validation fallback",bestPick:"No Strong Pick",confidence:0,homeProbability:statistical.probabilities.home,drawProbability:statistical.probabilities.draw,awayProbability:statistical.probabilities.away,over25Probability:statistical.over25,bttsProbability:statistical.btts,correctScore:"N/A",analysis:"AI unavailable; calibrated statistical engine retained.",factors:["AI validation unavailable","Statistical ensemble retained","No invented AI signal"],risk:"AI unavailable"};}
+  if(!deepAnalysis){
+    ai={
+      enabled:false,
+      model:OPENAI_MODEL,
+      status:"Regular statistical prediction",
+      bestPick:statistical.pick || "No Strong Pick",
+      confidence:Number(statistical.confidence||0),
+      homeProbability:statistical.probabilities.home,
+      drawProbability:statistical.probabilities.draw,
+      awayProbability:statistical.probabilities.away,
+      over25Probability:statistical.over25,
+      bttsProbability:statistical.btts,
+      correctScore:statistical.correctScore||"N/A",
+      factors:["Regular statistical model","Historical form and goals used","AI deep validation reserved for VIP candidates"],
+      analysis:"Regular prediction generated. This match is not being forced into VIP.",
+      risk:statistical.risk || "Regular prediction"
+    };
+  }else{
+    try{ai=await runFootballAI({fixture:{id:fixture.id,slug:fixture.slug,date:fixture.starting_at,league:fixture.league,home:fixture.homeTeam,away:fixture.awayTeam},homeForm,awayForm,statistical});}
+    catch(e){console.log("OpenAI validation error:",e.message);ai={enabled:false,model:OPENAI_MODEL,status:"AI unavailable; statistical validation fallback",bestPick:"No Strong Pick",confidence:0,homeProbability:statistical.probabilities.home,drawProbability:statistical.probabilities.draw,awayProbability:statistical.probabilities.away,over25Probability:statistical.over25,bttsProbability:statistical.btts,correctScore:"N/A",analysis:"AI unavailable; calibrated statistical engine retained.",factors:["AI validation unavailable","Statistical ensemble retained","No invented AI signal"],risk:"AI unavailable"};}
+  }
   const result=engine.buildFinal(statistical,ai,historyRows(),{home:homeForm,away:awayForm});
   result.form={home:homeForm,away:awayForm};
   result.provider="SportScore"; result.usesOdds=false; result.top150Team = fixture.top150Team === true; result.predictionSnapshot={probabilities:{...result.probabilities},over25:result.over25,btts:result.btts,confidence:result.confidence,league:fixture.league||null};
@@ -594,7 +614,7 @@ async function api(req,res,url){
     const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);try{const r=await getFixtures(date);return sendJSON(res,200,{ok:true,provider:"SportScore",date,count:r.matches.length,matches:r.matches.slice(0,10),message:"SportScore API inafanya kazi."});}catch(e){return sendJSON(res,502,{ok:false,provider:"SportScore",error:e.message});}
   }
   if(url.pathname==="/api/analyze-fixture"){
-    if(req.method!=="POST")return sendJSON(res,405,{ok:false,error:"POST required"});let body="";req.on("data",c=>{body+=c.toString();if(body.length>1024*1024)req.destroy();});req.on("end",async()=>{try{const data=JSON.parse(body||"{}"),m=data.match||null,id=String(data.fixtureId||m?.fixture?.id||m?.fixture?.slug||m?.id||m?.slug||"");if(!id&&!m)return sendJSON(res,400,{ok:false,error:"SportScore match data haikupatikana."});const prediction=await analyze(id,m);return sendJSON(res,200,{ok:true,prediction});}catch(e){console.log("Analysis error:",e.message);return sendJSON(res,500,{ok:false,error:e.message});}});return;
+    if(req.method!=="POST")return sendJSON(res,405,{ok:false,error:"POST required"});let body="";req.on("data",c=>{body+=c.toString();if(body.length>1024*1024)req.destroy();});req.on("end",async()=>{try{const data=JSON.parse(body||"{}"),m=data.match||null,id=String(data.fixtureId||m?.fixture?.id||m?.fixture?.slug||m?.id||m?.slug||"");if(!id&&!m)return sendJSON(res,400,{ok:false,error:"SportScore match data haikupatikana."});const prediction=await analyze(id,m,{deepAnalysis:data.deepAnalysis !== false});return sendJSON(res,200,{ok:true,prediction});}catch(e){console.log("Analysis error:",e.message);return sendJSON(res,500,{ok:false,error:e.message});}});return;
   }
   if(url.pathname==="/api/predictions"){const predictions=db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true);return sendJSON(res,200,{ok:true,vipOnly:false,predictions});}
   if(url.pathname==="/api/performance"||url.pathname==="/api/backtest"){
