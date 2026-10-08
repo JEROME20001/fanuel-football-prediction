@@ -21,11 +21,12 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 function loadDB() {
   try {
-    if (!fs.existsSync(DB_FILE)) return { predictions: [], results: [] };
+    if (!fs.existsSync(DB_FILE)) return { predictions: [], results: [], dailyOdds15: [] };
     const data = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
     return {
       predictions: Array.isArray(data.predictions) ? data.predictions : [],
-      results: Array.isArray(data.results) ? data.results : []
+      results: Array.isArray(data.results) ? data.results : [],
+      dailyOdds15: Array.isArray(data.dailyOdds15) ? data.dailyOdds15 : []
     };
   } catch (e) {
     console.log("DB load error:", e.message);
@@ -201,7 +202,48 @@ function sportBetMarketFlags(event){
   flags.draw=flags.oneXTwo;
   return flags;
 }
-function sportBetTimestamp(value){
+
+function sportBetOddsForEvent(event){
+  const out={oneXTwo:[],btts:[],doubleChance:[],totals:{}};
+  const markets=Array.isArray(event?.markets)?event.markets:[];
+  const activeValue=v=>v!==false&&v!==0&&v!=="0"&&v!=="false"&&v!=="suspended";
+  const push=(o,market)=>({marketId:String(market?.id??""),marketDesc:String(market?.desc||market?.name||""),specifier:market?.specifier||null,outcomeId:String(o?.id??""),outcomeDesc:String(o?.desc||o?.description||o?.name||""),odds:Number(o?.odds)});
+  for(const market of markets){
+    if(!activeValue(market?.status)) continue;
+    const mid=String(market?.id??"");
+    const desc=String(market?.desc||market?.name||market?.description||"").toLowerCase();
+    const outcomes=Array.isArray(market?.outcomes)?market.outcomes:[];
+    const is1x2=mid==="1"||/1x2|match result|full time result/.test(desc);
+    const isBtts=mid==="29"||/gg\s*\/\s*ng|both teams to score|btts/.test(desc);
+    const isDc=mid==="10"||/double chance/.test(desc);
+    const isTotal=mid==="18"||/over\s*\/\s*under|total goals|over\s*under/.test(desc);
+    for(const o of outcomes){
+      if(!activeValue(o?.isActive??o?.status)) continue;
+      const od=String(o?.desc||o?.description||o?.name||"").toLowerCase();
+      const item=push(o,market);
+      if(!Number.isFinite(item.odds)||item.odds<=1) continue;
+      if(is1x2){
+        const id=String(o?.id??"");
+        const pick=id==="1"?"Home Win":id==="2"?"Draw":id==="3"?"Away Win":/\bhome\b/.test(od)?"Home Win":/\b(draw|tie)\b/.test(od)?"Draw":/\baway\b/.test(od)?"Away Win":null;
+        if(pick) out.oneXTwo.push({...item,pick});
+      }else if(isBtts){
+        const pick=/^(yes|gg)\b|\byes\b|\bgg\b/.test(od)?"BTTS YES":/^(no|ng)\b|\bno\b|\bng\b/.test(od)?"BTTS NO":null;
+        if(pick) out.btts.push({...item,pick});
+      }else if(isDc){
+        const pick=/\b1x\b|home\s*\/\s*draw|home\s+or\s+draw/.test(od)?"1X":/\bx2\b|draw\s*\/\s*away|draw\s+or\s+away/.test(od)?"X2":/\b12\b|home\s*\/\s*away|home\s+or\s+away/.test(od)?"12":null;
+        if(pick) out.doubleChance.push({...item,pick});
+      }else if(isTotal){
+        const m=String(market?.specifier||"").match(/total=([0-9]+(?:\.[0-9]+)?)/i);
+        const lm=od.match(/(?:over|under)\s*([0-9]+(?:\.[0-9]+)?)/i);
+        const line=m?m[1]:(lm?lm[1]:null);
+        const pick=/\bunder\b/.test(od)?"Under "+line:/\bover\b/.test(od)?"Over "+line:null;
+        if(line&&pick){if(!out.totals[line]) out.totals[line]=[];out.totals[line].push({...item,pick});}
+      }
+    }
+  }
+  return out;
+}
+\nfunction sportBetTimestamp(value){
   const n=Number(value);
   if(!Number.isFinite(n) || n<=0) return null;
   return n < 100000000000 ? n * 1000 : n;
@@ -513,7 +555,7 @@ async function analyze(fixtureId,suppliedMatch,options={}){
     const raw=suppliedMatch.raw||suppliedMatch;
     const suppliedSportyAvailable = suppliedMatch.sportyBetAvailable === true;
     const suppliedSportyMarkets = suppliedMatch.sportyBetMarkets || null;
-    const suppliedSportyEventId = suppliedMatch.sportyBetEventId || null;
+    const suppliedSportyEventId = suppliedMatch.sportyBetEventId || null;\n    const suppliedSportyOdds = suppliedMatch.sportyBetOdds || null;
     fixture=normalizeMatch(raw);
     fixture.id=String(suppliedMatch.id||suppliedMatch.slug||raw.id||raw.slug||raw.match_id||raw.fixture_id||fixture.id||("auto-"+fixture.homeTeam.name+"-"+fixture.awayTeam.name+"-"+Date.now()));
     fixture.slug=suppliedMatch.slug||raw.slug||fixture.id;
@@ -557,7 +599,7 @@ async function analyze(fixtureId,suppliedMatch,options={}){
   }
   const result=engine.buildFinal(statistical,ai,historyRows(),{home:homeForm,away:awayForm});
   result.form={home:homeForm,away:awayForm};
-  result.provider="SportScore"; result.usesOdds=false; result.top150Team = fixture.top150Team === true; result.predictionSnapshot={probabilities:{...result.probabilities},over25:result.over25,btts:result.btts,confidence:result.confidence,league:fixture.league||null};
+  result.provider="SportScore"; result.usesOdds=false; result.sportyBetOdds=fixture.sportyBetOdds||null; result.sportyBetEventId=fixture.sportyBetEventId||null; result.top150Team = fixture.top150Team === true; result.predictionSnapshot={probabilities:{...result.probabilities},over25:result.over25,btts:result.btts,confidence:result.confidence,league:fixture.league||null};
   result.createdAt=new Date().toISOString();
   attachAI(result,ai);
   // VIP mode: qualifying matches are stored; non-qualifying fixtures remain visible in the frontend.
@@ -579,7 +621,97 @@ async function analyze(fixtureId,suppliedMatch,options={}){
   saveDB(db);
   return result;
 }
-function sendJSON(res,status,data){res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","Access-Control-Allow-Origin":"*"});res.end(JSON.stringify(data));}
+
+function dailyOdds15Candidates(predictions){
+  const rows=[];
+  const dcProb=(p,pick)=>pick==="1X"?Number(p.probabilities?.home||0)+Number(p.probabilities?.draw||0):pick==="X2"?Number(p.probabilities?.away||0)+Number(p.probabilities?.draw||0):Number(p.probabilities?.home||0)+Number(p.probabilities?.away||0);
+  for(const p of predictions||[]){
+    if(!p||!p.ai?.enabled||p.pick==="No Strong Pick") continue;
+    const quality=String(p.dataQuality?.level||"low").toLowerCase();
+    if(!["high","medium"].includes(quality)) continue;
+    const confidence=Number(p.confidence||p.ai?.confidence||0);
+    if(confidence<55) continue;
+    const odds=p.sportyBetOdds||{};
+    const add=(market,pick,odd,prob)=>{
+      const o=Number(odd), pr=Number(prob);
+      if(!Number.isFinite(o)||o<=1||!Number.isFinite(pr)||pr<55) return;
+      const implied=100/o, edge=pr-implied;
+      const riskText=String(p.risk||p.ai?.risk||"").toLowerCase();
+      const riskPenalty=riskText.includes("high")?12:0;
+      const safety=pr+(quality==="high"?6:2)+(confidence-50)*0.3+edge*0.45-riskPenalty;
+      rows.push({
+        fixtureId:String(p.fixtureId||""),
+        match:p.match || ((p.homeTeam||p.home?.name||"Home")+" vs "+(p.awayTeam||p.away?.name||"Away")),
+        homeTeam:p.homeTeam||p.home?.name||"",
+        awayTeam:p.awayTeam||p.away?.name||"",
+        league:p.league?.name||p.league||"Football",
+        market,pick,odds:o,probability:Math.round(pr*10)/10,
+        impliedProbability:Math.round(implied*10)/10,edge:Math.round(edge*10)/10,
+        confidence:Math.round(confidence*10)/10,quality,risk:p.risk||p.ai?.risk||"Unknown",
+        safetyScore:Math.round(safety*10)/10,sportyBetEventId:p.sportyBetEventId||null
+      });
+    };
+    const oneX=Array.isArray(odds.oneXTwo)?odds.oneXTwo:[];
+    if((p.pick==="Home Win"||p.pick==="Away Win")){
+      const x=oneX.find(v=>v.pick===p.pick);
+      const pr=p.pick==="Home Win"?Number(p.probabilities?.home||0):Number(p.probabilities?.away||0);
+      if(x) add("1X2",p.pick,x.odds,pr);
+    }
+    const dc=Array.isArray(odds.doubleChance)?odds.doubleChance:[];
+    for(const pick of ["1X","X2","12"]){
+      const x=dc.find(v=>v.pick===pick); if(x){const pr=dcProb(p,pick);if(pr>=62) add("Double Chance",pick,x.odds,pr);}
+    }
+    const btts=Array.isArray(odds.btts)?odds.btts:[];
+    const bProb=Number(p.btts||p.ai?.bttsProbability||0);
+    const bPick=bProb>=50?"BTTS YES":"BTTS NO";
+    const bx=btts.find(x=>x.pick===bPick); if(bx) add("GG/NG",bPick,bx.odds,bProb);
+
+    const totals=odds.totals||{};
+    for(const spec of [["1.5","Over 1.5",Number(p.over15||0)],["2.5","Over 2.5",Number(p.over25||0)],["3.5","Over 3.5",Number(p.over35||0)]]){
+      const line=spec[0], overPick=spec[1], overProb=spec[2], arr=Array.isArray(totals[line])?totals[line]:[];
+      const wanted=overProb>=55?overPick:"Under "+line;
+      const prob=overProb>=55?overProb:100-overProb;
+      const x=arr.find(v=>v.pick===wanted);
+      if(x&&prob>=60) add("Total Goals",wanted,x.odds,prob);
+    }
+  }
+  const best=new Map();
+  for(const x of rows){const key=x.fixtureId+"|"+x.market+"|"+x.pick;const old=best.get(key);if(!old||x.safetyScore>old.safetyScore)best.set(key,x);}
+  return [...best.values()].sort((a,b)=>b.safetyScore-a.safetyScore);
+}
+function buildDailyOdds15(date,predictions){
+  const all=dailyOdds15Candidates(predictions);
+  const pool=all.filter(x=>x.odds<=3.5&&x.probability>=58).slice(0,50);
+  let best=null;
+  const dfs=(start,chosen,product,safety,used)=>{
+    if(chosen.length===5){
+      if(product<14||product>16.25)return;
+      const score=Math.abs(Math.log(product/15))*45-(safety/5)*0.35;
+      if(!best||score<best.score)best={score,product,chosen:[...chosen],avgSafety:safety/5};
+      return;
+    }
+    for(let i=start;i<pool.length;i++){
+      const x=pool[i]; if(used.has(x.fixtureId))continue;
+      const next=product*x.odds; if(next>16.25)continue;
+      if(chosen.length===4&&(next<14||next>16.25))continue;
+      const set2=new Set(used);set2.add(x.fixtureId);
+      dfs(i+1,[...chosen,x],next,safety+x.safetyScore,set2);
+    }
+  };
+  dfs(0,[],1,0,new Set());
+  if(!best)return {
+    eligible:false,date,selections:[],totalOdds:null,candidateCount:all.length,
+    message:"Hakuna combination ya selections 5 yenye odds karibu 15.00 bila kuongeza selection yenye risk kubwa. Mfumo haujalazimisha slip."
+  };
+  return {
+    eligible:true,type:"DAILY ODDS 15",label:"15 ODDS SURE — 5 PICKS",date,
+    bookmaker:"SportyBet Tanzania",targetOdds:15,totalOdds:Math.round(best.product*100)/100,
+    selections:best.chosen.map((x,i)=>({...x,number:i+1})),averageSafety:Math.round(best.avgSafety*10)/10,
+    candidateCount:all.length,generatedAt:new Date().toISOString(),
+    disclaimer:"Conservative model selection only. No bet is guaranteed; total odds near 15 carry substantial loss risk."
+  };
+}
+\nfunction sendJSON(res,status,data){res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","Access-Control-Allow-Origin":"*"});res.end(JSON.stringify(data));}
 function normalizeTeamName(name){return String(name||"").toLowerCase().replace(/&/g,"and").replace(/[^a-z0-9]+/g," ").trim();}
 function actualPick(h,a){return h>a?"Home Win":h<a?"Away Win":"Draw";}
 function settlementMetrics(prediction,homeScore,awayScore){const pick=actualPick(homeScore,awayScore),total=homeScore+awayScore;const predictedScore=String(prediction?.correctScore||"");return {actualPick:pick,actualOver25:total>=3,actualBTTS:homeScore>=1&&awayScore>=1,actualScore:`${homeScore}-${awayScore}`,correct:prediction?.pick==="No Strong Pick"?null:prediction?.pick===pick,over25Correct:Number(prediction?.over25||0)>=50?total>=3:total<3,bttsCorrect:Number(prediction?.btts||0)>=50?(homeScore>=1&&awayScore>=1):!(homeScore>=1&&awayScore>=1),correctScore:predictedScore===`${homeScore}-${awayScore}`};}
@@ -627,7 +759,27 @@ async function api(req,res,url){
   if(url.pathname==="/api/settle-pending"){
     if(req.method!=="GET"&&req.method!=="POST")return sendJSON(res,405,{ok:false,error:"GET or POST required"});const cutoff=Date.now()-2*3600000,pending=db.predictions.filter(p=>p.createdAt&&new Date(p.createdAt).getTime()<cutoff&&!db.results.some(r=>String(r.fixtureId)===String(p.fixtureId))).slice(-50),settled=[],skipped=[];for(const p of pending){try{const f=await findFinishedFixtureForPrediction(p);if(f)settled.push(saveSettlement(p,p.fixtureId,f.homeScore,f.awayScore,"SportScore-auto-"+f.matchedBy));else skipped.push({fixtureId:p.fixtureId,reason:"Final score not found yet"});}catch(e){skipped.push({fixtureId:p.fixtureId,reason:e.message});}}return sendJSON(res,200,{ok:true,checked:pending.length,settled:settled.length,results:settled,skipped});
   }
-  if(url.pathname==="/api/ai-demo"){
+
+  if(url.pathname==="/api/daily-odds15"){
+    if(req.method==="GET"){
+      const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);
+      const slip=[...db.dailyOdds15].reverse().find(x=>x.date===date)||null;
+      return sendJSON(res,200,{ok:true,date,slip});
+    }
+    if(req.method!=="POST") return sendJSON(res,405,{ok:false,error:"GET or POST required"});
+    let body="";req.on("data",c=>{body+=c.toString();if(body.length>5*1024*1024)req.destroy();});
+    req.on("end",()=>{
+      try{
+        const d=JSON.parse(body||"{}"),date=String(d.date||"").trim(),predictions=Array.isArray(d.predictions)?d.predictions:[];
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return sendJSON(res,400,{ok:false,error:"date ya YYYY-MM-DD inahitajika"});
+        const slip=buildDailyOdds15(date,predictions);
+        db.dailyOdds15=db.dailyOdds15.filter(x=>x.date!==date);db.dailyOdds15.push(slip);
+        if(db.dailyOdds15.length>60)db.dailyOdds15=db.dailyOdds15.slice(-60);
+        saveDB(db);return sendJSON(res,200,{ok:true,slip});
+      }catch(e){return sendJSON(res,400,{ok:false,error:"Daily Odds 15 generation failed: "+e.message});}
+    });return;
+  }
+\n  if(url.pathname==="/api/ai-demo"){
     try{const stat={fixtureId:"demo-001",match:"Demo United vs Demo City",homeTeam:"Demo United",awayTeam:"Demo City",pick:"Home Win",confidence:55,probabilities:{home:55,draw:25,away:20},over25:58,btts:54};const ai=await runFootballAI({fixture:{id:"demo-001",home:{name:"Demo United"},away:{name:"Demo City"},league:{name:"AI Test"}},homeForm:{games:5,wins:3,draws:1,losses:1,goalsFor:1.8,goalsAgainst:.9},awayForm:{games:5,wins:2,draws:1,losses:2,goalsFor:1.2,goalsAgainst:1.4},statistical:stat});return sendJSON(res,200,{ok:true,engine:"Fanuel Football AI Validator",model:OPENAI_MODEL,ai});}catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
   }
   return sendJSON(res,404,{ok:false,error:"API route not found"});
