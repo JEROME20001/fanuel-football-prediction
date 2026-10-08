@@ -896,7 +896,12 @@
 
     } catch (error) {
       console.error("Automatic analysis error:", error);
-      predictionBox.closest(".match")?.remove();
+      predictionBox.innerHTML = `
+        <div class="prediction" style="border-left-color:#b55d5d;">
+          <b>⚠️ AI Deep Analysis unavailable</b><br>
+          No alternative statistical-only prediction was shown.<br>
+          <small>${escapeHTML(error?.message || "AI analysis failed for this fixture.")}</small>
+        </div>`;
       return {eligible:false,error:error.message};
     }
   }
