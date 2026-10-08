@@ -759,7 +759,13 @@ async function buildDailyOdds15(date,predictions){
   }catch(e){
     console.log("Daily Odds 15 SportyBet refresh failed:",e.message);
   }
-  const sportyMatches=Array.isArray(sporty?.matches)?sporty.matches:[];
+  let sportyMatches=Array.isArray(sporty?.matches)?sporty.matches:[];
+  const missingOddsEvents=sportyMatches.filter(x=>countSportyOdds(x?.odds)<=0);
+  if(missingOddsEvents.length){
+    const refreshed=await refreshSportyBetEventOdds(missingOddsEvents);
+    const byId=new Map(refreshed.map(x=>[String(x.eventId),x]));
+    sportyMatches=sportyMatches.map(x=>byId.get(String(x.eventId))||x);
+  }
   const enriched=(predictions||[]).map(p=>{
     if(countSportyOdds(p?.sportyBetOdds)>0) return p;
     const home=p?.homeTeam||"";
