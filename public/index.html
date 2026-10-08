@@ -318,8 +318,8 @@
 <body>
 
 <header>
-  <h1>👑 Fanuel Football Prediction — VIP ONLY</h1>
-  <p>AI Deep Analysis • VIP Selection • Historical Performance</p><div style="margin-top:6px;font-size:12px;color:#8fc8ff;">System Build: VIP-MULTIMARKET • 2026</div>
+  <h1>👑 Fanuel Football Prediction — AI + VIP + 15 ODDS</h1>
+  <p>AI Deep Analysis • VIP Selection • Daily 15 Odds • Historical Performance</p><div style="margin-top:6px;font-size:12px;color:#8fc8ff;">System Build: VIP-MULTIMARKET • 2026</div>
   <div id="systemStatus" style="margin-top:12px;font-size:13px;color:#c7e3ff;">Connecting to prediction server...</div>
 </header>
 
@@ -385,6 +385,20 @@
 
   </div>
 
+
+
+  <!-- DAILY ODDS 15 -->
+  <div class="panel">
+    <div class="matches-header">
+      <h2>🛡️ DAILY 15 ODDS — 5 PICKS</h2>
+      <div id="dailyOdds15Badge" class="count">Waiting for Deep Analysis</div>
+    </div>
+    <div id="dailyOdds15">
+      <div class="empty">
+        Mfumo utachambua fixtures zote kwanza, kisha utachagua <b>selections 5 tu</b> zenye ubora bora na odds halisi za SportyBet Tanzania.
+      </div>
+    </div>
+  </div>
 
   <!-- PREDICTION HISTORY -->
   <div class="panel">
@@ -880,7 +894,7 @@
         card.dataset.vip = "0";
         card.dataset.bigLeague = String(match.bigLeague ? 1 : 0);
         displayRegularPrediction(predictionBox, data.prediction);
-        return {eligible:false, processed:true};
+        return {eligible:false, processed:true, prediction:data.prediction};
       }
 
       card.dataset.vip = "1";
@@ -892,7 +906,7 @@
       displayPrediction(predictionBox, data.prediction);
       loadPredictionHistory();
       loadPerformance();
-      return {eligible:true};
+      return {eligible:true, processed:true, prediction:data.prediction};
 
     } catch (error) {
       console.error("Automatic analysis error:", error);
@@ -912,6 +926,7 @@
     let nextIndex = 0;
     let completed = 0;
     let vipCount = 0;
+    const analyzedPredictions = [];
 
     showStatus(
       "🧠 Deep Analysis started: 0/" + pool.length +
@@ -926,6 +941,7 @@
         const match = pool[index];
         const outcome = await analyzeMatch(match, index, true);
         if (outcome?.eligible) vipCount++;
+        if (outcome?.prediction) analyzedPredictions.push(outcome.prediction);
         completed++;
 
         showStatus(
@@ -941,7 +957,7 @@
       () => worker()
     ));
 
-    const matchContainer = document.getElementById("matches");
+    await generateDailyOdds15(document.getElementById("matchDate").value, analyzedPredictions);\n\n    const matchContainer = document.getElementById("matches");
     const orderedCards = Array.from(matchContainer.querySelectorAll(".match")).sort((a,b) =>
       Number(b.dataset.vip || 0) - Number(a.dataset.vip || 0) ||
       Number(b.dataset.bigLeague || 0) - Number(a.dataset.bigLeague || 0)
@@ -950,7 +966,7 @@
 
     const count = document.getElementById("matchCount");
     count.textContent = pool.length + " fixtures • " + vipCount +
-      " VIP pick" + (vipCount === 1 ? "" : "s") + " • all fixtures deep analyzed";
+      " VIP pick" + (vipCount === 1 ? "" : "s") + " • 15 Odds: 5-pick builder";
 
     showStatus(
       vipCount
@@ -965,6 +981,82 @@
     loadPredictionHistory();
     loadPerformance();
   }
+
+  /* =========================
+     DAILY ODDS 15
+  ========================= */
+  async function generateDailyOdds15(date, predictions) {
+    const box = document.getElementById("dailyOdds15");
+    const badge = document.getElementById("dailyOdds15Badge");
+    if (!box) return;
+
+    badge.textContent = "Building 5-pick slip...";
+    box.innerHTML = '<div class="status success"><span class="spinner"></span> Building Daily 15 Odds from verified SportyBet prices...</div>';
+
+    try {
+      const response = await fetch("/api/daily-odds15", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        cache: "no-store",
+        body: JSON.stringify({date, predictions})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || ("Daily Odds 15 failed (" + response.status + ")"));
+
+      const slip = data.slip || {};
+      if (!slip.eligible) {
+        badge.textContent = "No qualifying 5-pick slip";
+        box.innerHTML = `
+          <div class="prediction regular-prediction" style="border-left-color:#b55d5d;">
+            <h3>🛡️ DAILY 15 ODDS — NO SLIP</h3>
+            <div class="status" style="margin-top:8px;">
+              ${escapeHTML(slip.message || "No valid 5-pick combination was found.")}
+            </div>
+            <div style="margin-top:10px;font-size:12px;color:#89a7c2;">
+              Candidate selections checked: <b>${escapeHTML(slip.candidateCount ?? 0)}</b>.
+              Mfumo haujalazimisha kuongeza game yenye risk kubwa ili kufikisha 15.00.
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      badge.textContent = "5 picks • Total " + slip.totalOdds;
+      const rows = (slip.selections || []).map(x => `
+        <div class="stat" style="margin-bottom:8px;">
+          <b>${escapeHTML(x.number)}. ${escapeHTML(x.match)}</b><br>
+          <span style="font-size:13px;">${escapeHTML(x.market)}: <b>${escapeHTML(x.pick)}</b></span><br>
+          <small>Odds <b>${escapeHTML(x.odds)}</b> • Model ${escapeHTML(x.probability)}% • Edge ${escapeHTML(x.edge)}% • ${escapeHTML(x.quality).toUpperCase()} • Risk: ${escapeHTML(x.risk)}</small>
+        </div>
+      `).join("");
+
+      box.innerHTML = `
+        <div class="prediction" style="border-left-color:#35c97a;">
+          <h3>🛡️ 15 ODDS SURE <span class="ai-badge">5 PICKS</span></h3>
+          <div class="status success" style="margin-top:8px;">
+            <b>SportyBet Tanzania</b> • Target 15.00 • Actual total odds:
+            <b>${escapeHTML(slip.totalOdds)}</b>
+          </div>
+          <div class="stats" style="display:block;margin-top:12px;">${rows}</div>
+          <div class="confidence" style="margin-top:10px;">
+            Average selection safety score: <b>${escapeHTML(slip.averageSafety)}</b>
+          </div>
+          <div style="margin-top:12px;font-size:12px;color:#89a7c2;">
+            ⚠️ Hii ni conservative selection ya mfumo, si guarantee. Accumulator ya odds ~15 bado ina risk ya kupoteza selections zote.
+          </div>
+        </div>
+      `;
+    } catch (error) {
+      badge.textContent = "Unavailable";
+      box.innerHTML = `
+        <div class="prediction" style="border-left-color:#b55d5d;">
+          <b>⚠️ Daily Odds 15 unavailable</b><br>
+          <small>${escapeHTML(error?.message || "Unable to build the 5-pick slip.")}</small>
+        </div>
+      `;
+    }
+  }
+
   /* =========================
      AI ENGINE DEMO
   ========================= */
