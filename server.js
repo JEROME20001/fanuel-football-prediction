@@ -14,7 +14,7 @@ const SPORTYBET_ENABLED = String(process.env.SPORTYBET_ENABLED ?? "true").toLowe
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 const MAX_AI_DAILY = Math.max(1, Number(process.env.MAX_AI_DAILY || 150));
-const VIP_CANDIDATES = Math.max(10, Math.min(60, Number(process.env.VIP_CANDIDATES || 40)));
+const VIP_CANDIDATES = Math.max(10, Math.min(150, Number(process.env.VIP_CANDIDATES || 150)));
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -140,6 +140,14 @@ function normalizeBookmakerTeamName(name){
 function bookmakerMatchKey(home, away){
   return normalizeBookmakerTeamName(home)+"|"+normalizeBookmakerTeamName(away);
 }
+const TOP_150_TEAMS = new Set(["Real Madrid","Barcelona","Atletico Madrid","Athletic Bilbao","Real Sociedad","Villarreal","Real Betis","Sevilla","Valencia","Girona","Manchester City","Liverpool","Arsenal","Manchester United","Chelsea","Tottenham Hotspur","Newcastle United","Aston Villa","West Ham United","Brighton","Bayern Munich","Borussia Dortmund","RB Leipzig","Bayer Leverkusen","Eintracht Frankfurt","Stuttgart","Wolfsburg","Mainz","Union Berlin","Borussia Monchengladbach","Inter Milan","AC Milan","Juventus","Napoli","AS Roma","Lazio","Atalanta","Fiorentina","Bologna","Torino","Paris Saint Germain","Marseille","Monaco","Lyon","Lille","Nice","Lens","Rennes","Strasbourg","Nantes","Ajax","PSV Eindhoven","Feyenoord","AZ Alkmaar","Twente","Porto","Benfica","Sporting CP","Braga","Vitoria Guimaraes","Galatasaray","Fenerbahce","Besiktas","Trabzonspor","Basaksehir","Sivasspor","Club Brugge","Anderlecht","Genk","Union Saint Gilloise","Al Nassr","Al Hilal","Al Ittihad","Al Ahli","Al Shabab","Al Ettifaq","Al Qadsiah","Al Gharafa","Al Sadd","Al Duhail","Al Ain","Shabab Al Ahli","Al Jazira","Urawa Red Diamonds","Yokohama F Marinos","Kawasaki Frontale","Vissel Kobe","Gamba Osaka","FC Seoul","Jeonbuk Hyundai Motors","Shanghai Port","Shandong Taishan","Beijing Guoan","Ulsan Hyundai","Pohang Steelers","Daejeon Hana Citizen","Buriram United","Johor Darul Ta'zim","Persib Bandung","Muangthong United","Flamengo","Palmeiras","Botafogo","Fluminense","Atletico Mineiro","Gremio","Internacional","Sao Paulo","Corinthians","Cruzeiro","River Plate","Boca Juniors","Racing Club","Independiente","Estudiantes","Colo Colo","Universidad de Chile","Nacional","Penarol","Olimpia","LA Galaxy","Inter Miami","New York City FC","Seattle Sounders","Los Angeles FC","Atlanta United","CF Montreal","Toronto FC","FC Cincinnati","Columbus Crew","Celtic","Rangers","Red Bull Salzburg","Rapid Vienna","Young Boys","Basel","Dinamo Zagreb","Crvena zvezda","Olympiacos","FCSB","Slavia Prague","Sparta Prague","Shakhtar Donetsk","Dynamo Kyiv","Ferencvaros","Maccabi Tel Aviv","PAOK","Panathinaikos","Freiburg","Maribor"].map(normalizeBookmakerTeamName));
+function isTop150Team(name){
+  const n=normalizeBookmakerTeamName(name);
+  if(!n) return false;
+  return TOP_150_TEAMS.has(n) || [...TOP_150_TEAMS].some(x => n===x || n.includes(x) || x.includes(n));
+}
+function isTop150Fixture(home, away){ return isTop150Team(home) || isTop150Team(away); }
+
 function sportBetMarketFlags(event){
   const flags={oneXTwo:false,draw:false,btts:false};
   for(const market of event?.markets||[]){
@@ -150,11 +158,11 @@ function sportBetMarketFlags(event){
   flags.draw=flags.oneXTwo;
   return flags;
 }
-async function getSportyBetUpcoming(days=7){
+async function getSportyBetUpcoming(days=1,targetDate=null){
   if(!SPORTYBET_ENABLED) return {enabled:false,matches:[],byKey:new Map(),count:0,message:"SportyBet filter disabled."};
   const cacheKey="sportybet:upcoming:"+SPORTYBET_REGION+":"+days;
   const cached=cacheGet(cacheKey); if(cached) return cached;
-  const timeline=Math.max(24,Math.min(720,days*24));
+  const timeline=720;
   const all=[];
   for(let page=1;page<=5;page++){
     const pathApi=`/api/${SPORTYBET_REGION}/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C18%2C10%2C29%2C11%2C26%2C36%2C14%2C60100&pageSize=100&pageNum=${page}&todayGames=false&timeline=${timeline}&_t=${Date.now()}`;
@@ -175,6 +183,10 @@ async function getSportyBetUpcoming(days=7){
           const away=event?.awayTeamName||event?.away_team_name;
           const eventId=String(event?.eventId||event?.id||"");
           if(!home||!away||!eventId) continue;
+          const eventDate = Number.isFinite(Number(event?.estimateStartTime||event?.startTime))
+            ? new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Dar_es_Salaam"}).format(new Date(Number(event.estimateStartTime||event.startTime)))
+            : null;
+          if(targetDate && eventDate !== targetDate) continue;
           const ts=Number(event?.estimateStartTime||event?.startTime||0);
           const flags=sportBetMarketFlags(event);
           all.push({
@@ -208,17 +220,19 @@ function markSportyBetAvailability(matches, sporty){
     const key=bookmakerMatchKey(m?.homeTeam?.name,m?.awayTeam?.name);
     const sb=sporty?.byKey?.get(key)||null;
     m.sportyBetAvailable=Boolean(sb);
+    m.top150Team=isTop150Fixture(m?.homeTeam?.name,m?.awayTeam?.name);
+    m.vipCandidate=Boolean(m.sportyBetAvailable && m.top150Team);
     m.sportyBetEventId=sb?.eventId||null;
     m.sportyBetMarkets=sb?{oneXTwo:Boolean(sb.oneXTwo),draw:Boolean(sb.draw),btts:Boolean(sb.btts)}:{oneXTwo:false,draw:false,btts:false};
     m.bookmaker=sb?"SportyBet":null;
     return m;
   });
 }
-async function getFixturesWindow(startDate, days = 7) {
+async function getFixturesWindow(startDate, days = 1) {
   const all = [];
   const seen = new Set();
-  const sporty = await getSportyBetUpcoming(days);
-  for (let offset = 0; offset < days; offset++) {
+  const sporty = await getSportyBetUpcoming(1,startDate);
+  for (let offset = 0; offset < 1; offset++) {
     const date = addDays(startDate, offset);
     try {
       const result = await getFixtures(date);
@@ -236,7 +250,9 @@ async function getFixturesWindow(startDate, days = 7) {
   }
   const marked = markSportyBetAvailability(all, sporty);
   marked.sort((a,b) =>
+    Number(b.vipCandidate) - Number(a.vipCandidate) ||
     Number(b.sportyBetAvailable) - Number(a.sportyBetAvailable) ||
+    Number(b.top150Team) - Number(a.top150Team) ||
     Number(b.bigLeague) - Number(a.bigLeague) ||
     (b.fixturePriority-a.fixturePriority) ||
     (new Date(a.starting_at||0)-new Date(b.starting_at||0))
@@ -441,15 +457,17 @@ async function api(req,res,url){
   if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length,storedTotal:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length-rows.length)},calibrationReady:rows.length>=10,vipOnly:false,bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,vipCandidates:VIP_CANDIDATES,vipCriteria:{markets:["1X2","DRAW","BTTS"],aiActive:true,bookmaker:"SportyBet",dataQuality:["HIGH","MEDIUM"],minimumSample:3,venueFallback:true,oneXTwo:{confidenceMin:56,topProbabilityMin:52,marginMin:6,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"],requiresSportyBet1X2:true},draw:{probabilityMin:29,drawEdgeMin:2,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"]},btts:{confidenceMin:56,edgeMin:6,modelDistanceMax:14,agreementMin:75,stability:["STABLE","MODERATE"],requiresSportyBetGGNG:true}},engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","VIP gate","correct-score distribution"],oddsUsed:false});}
   if(url.pathname==="/api/upcoming"){
     const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);
-    const days=Math.max(1,Math.min(7,Number(url.searchParams.get("days")||7)));
+    const days=1;
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return sendJSON(res,400,{ok:false,error:"Tumia date ya YYYY-MM-DD"});
     try{
       const windowMatches=await getFixturesWindow(date,days);
-      const matches=windowMatches.slice(0,VIP_CANDIDATES);
+      const matches=windowMatches.slice(0,150);
       const bigLeagueCount=matches.filter(m=>m.bigLeague).length;
       const sportyBetCount=matches.filter(m=>m.sportyBetAvailable).length;
-      const toDate=addDays(date,days-1);
-      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:false,allMatches:true,priorityMode:"SPORTYBET_AVAILABLE_FIRST_THEN_BIG_LEAGUES",bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,sportyBetCount,bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} matches from ${date} through ${toDate}; SportyBet-listed matches are prioritized, then big leagues; VIP-qualified picks are highlighted first.`});
+      const top150Count=matches.filter(m=>m.top150Team).length;
+      const vipCandidateCount=matches.filter(m=>m.vipCandidate).length;
+      const toDate=date;
+      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:false,allMatches:true,priorityMode:"SPORTYBET_AVAILABLE_FIRST_THEN_BIG_LEAGUES",bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,sportyBetCount,top150Count,vipCandidateCount,bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} matches for ${date}; SportyBet-listed matches are prioritized, then big leagues; VIP-qualified picks are highlighted first.`});
     }catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
   }
   if(url.pathname==="/api/sportscore-test"||url.pathname==="/api/test"){
