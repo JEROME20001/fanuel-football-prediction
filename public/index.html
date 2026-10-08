@@ -1076,6 +1076,7 @@
     const vipPrimaryMarket = prediction.vip?.primaryMarket || "";
     const vipPrimaryPick = prediction.vip?.primaryPick || prediction.pick || "N/A";
     const vipPrimaryProbability = prediction.vip?.topProbability ?? prediction.confidence ?? 0;
+    const vipCombinedPick = prediction.vip?.combinedPick || "";
 
 
     const vipMarkets = [
@@ -1104,8 +1105,13 @@
         </div>
 
         <div class="pick">
-          ${escapeHTML(vipPrimaryPick)}
+          ${escapeHTML(vipCombinedPick ? vipCombinedPick.replace("BTTS NO","NO GG").replace("BTTS YES","GG YES") : vipPrimaryPick)}
         </div>
+        ${vipCombinedPick ? `
+        <div class="status success" style="margin-top:8px;">
+          <b>👑 VIP COMBINATION</b><br>
+          ${escapeHTML(vipCombinedPick.replace("BTTS NO","NO GG").replace("BTTS YES","GG YES"))}
+        </div>` : ""}
         <div class="confidence" style="margin-top:4px;">
           👑 VIP Primary Market:
           <b>${escapeHTML(vipPrimaryMarket || "N/A")}</b>
