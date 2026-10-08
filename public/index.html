@@ -572,7 +572,7 @@
     container.innerHTML = `
       <div class="empty">
         <span class="spinner"></span>
-        Scanning selected date + next 7 days, big leagues first...
+        Scanning selected date only • Top 150 teams • SportyBet
       </div>
     `;
 
@@ -585,7 +585,7 @@
 
       const response =
         await fetch(
-          `/api/upcoming?date=${encodeURIComponent(date)}`,
+          `/api/upcoming?date=${encodeURIComponent(date)}&days=1`,
           {
             method: "GET",
             cache: "no-store"
@@ -648,7 +648,7 @@
       */
 
       count.textContent =
-        `${matches.length} matches • VIP screening active`;
+        `${matches.length} matches on ${date} • Top 150 + SportyBet VIP screening`;
 
       if (!matches.length) {
 
@@ -668,14 +668,14 @@
       }
 
       showStatus(
-        `🧠 Screening ${matches.length} prioritized candidates (big leagues first)...`,
+        `🧠 Screening selected-day candidates • Top 150 teams + SportyBet...`,
         "success"
       );
 
       container.innerHTML = "";
 
       /*
-        Only VIP-qualified matches are shown. Non-VIP matches stay hidden.
+        All selected-day fixtures are visible. Only Top-150 SportyBet candidates enter VIP analysis.
       */
 
       matches.forEach(
@@ -696,7 +696,7 @@
       );
 
       // Start prediction automatically as soon as matches are displayed.
-      autoAnalyzeMatches(matches);
+      autoAnalyzeMatches(matches.filter(m => m.vipCandidate === true));
 
     } catch (error) {
 
@@ -876,7 +876,7 @@
         predictionBox.innerHTML = `
           <div class="prediction" style="border-left-color:#5b7087;">
             <b>Screened</b><br>
-            This match did not pass the VIP quality gate or is not listed on SportyBet.<br>
+            This match did not pass the VIP quality gate, Top-150 filter, or SportyBet availability.<br>
             <small>It remains visible as a regular fixture. VIP-qualified picks are prioritized above and must be available on SportyBet.</small>
           </div>`;
         return {eligible:false};
@@ -946,7 +946,7 @@
     showStatus(
       vipCount
         ? "👑 VIP screening completed: " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
-        : "🛑 No SportyBet-listed match qualified for VIP in the selected window. All fixtures remain visible; the system did not force a weak VIP prediction.",
+        : "🛑 No Top-150 SportyBet match qualified for VIP on the selected date. All fixtures remain visible; the system did not force a weak VIP prediction.",
       vipCount ? "success" : "error"
     );
 
