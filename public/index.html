@@ -876,13 +876,14 @@
         predictionBox.innerHTML = `
           <div class="prediction" style="border-left-color:#5b7087;">
             <b>Screened</b><br>
-            This match did not pass the VIP quality gate.<br>
-            <small>It remains visible as a regular fixture. VIP-qualified picks are prioritized above.</small>
+            This match did not pass the VIP quality gate or is not listed on SportyBet.<br>
+            <small>It remains visible as a regular fixture. VIP-qualified picks are prioritized above and must be available on SportyBet.</small>
           </div>`;
         return {eligible:false};
       }
 
       card.dataset.vip = "1";
+      card.classList.add("sportybet-verified");
       card.dataset.bigLeague = String(match.bigLeague ? 1 : 0);
       const container = document.getElementById("matches");
       const vipCards = Array.from(container.querySelectorAll(".match")).filter(el => el.dataset.vip === "1");
@@ -945,7 +946,7 @@
     showStatus(
       vipCount
         ? "👑 VIP screening completed: " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
-        : "🛑 No VIP match qualified in the selected window. All fixtures remain visible; the system did not force a weak VIP prediction.",
+        : "🛑 No SportyBet-listed match qualified for VIP in the selected window. All fixtures remain visible; the system did not force a weak VIP prediction.",
       vipCount ? "success" : "error"
     );
 
