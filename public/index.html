@@ -908,7 +908,7 @@
     let nextIndex = 0;
 
     showStatus(
-      "🧠 VIP screening started: 0/" + total + " candidates checked. Only qualifying games will be published.",
+      "🧠 VIP screening started: 0/" + total + " candidates checked. VIP picks are highlighted; all fixtures remain visible.",
       "success"
     );
 
@@ -944,7 +944,7 @@
 
     showStatus(
       vipCount
-        ? "👑 VIP screening completed: " + vipCount + " strict VIP pick" + (vipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
+        ? "👑 VIP screening completed: " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
         : "🛑 No VIP match qualified in the selected window. All fixtures remain visible; the system did not force a weak VIP prediction.",
       vipCount ? "success" : "error"
     );
