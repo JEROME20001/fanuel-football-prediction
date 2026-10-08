@@ -467,7 +467,7 @@ function vipSelection(prediction, ai) {
       aiBttsPick === bttsPick && bttsDistance <= 14 &&
       agreement >= 75 && stabilityOK,
     criteria: {
-      sportBetAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      sportBetBttsAvailable, sportBetAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
       confidenceMin56: bttsConfidence >= 56,
       edgeMin6: bttsEdge >= 6,
       aiSameSignal: aiBttsPick === bttsPick,
