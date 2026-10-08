@@ -412,11 +412,11 @@ function vipSelection(prediction, ai) {
     distance <= 14 && stabilityOK;
 
   const oneXTwoCoverage =
-    sportBetOneXTwoAvailable && top150Team && aiActive && usableData && sampleOK && venueSampleOK &&
-    Number(prediction?.confidence || 0) >= 52 &&
+    sportBetOneXTwoAvailable && top150Team && usableData && sampleOK && venueSampleOK &&
+    Number(prediction?.confidence || 0) >= 51 &&
     topProbability >= 50 && margin >= 4 &&
-    agreement >= 65 && aiPick === topPick &&
-    distance <= 20 && coverageStabilityOK;
+    (!aiActive || (agreement >= 65 && aiPick === topPick && distance <= 20)) &&
+    coverageStabilityOK;
 
   const oneXTwo = {
     market: "1X2",
@@ -442,9 +442,9 @@ function vipSelection(prediction, ai) {
         confidenceMin52: Number(prediction?.confidence || 0) >= 52,
         probabilityMin50: topProbability >= 50,
         marginMin4: margin >= 4,
-        agreementMin65: agreement >= 65,
-        aiSamePick: aiPick === topPick,
-        modelDistanceMax20: distance <= 20,
+        agreementMin65OrAIInactive: !aiActive || agreement >= 65,
+        aiSamePickOrAIInactive: !aiActive || aiPick === topPick,
+        modelDistanceMax20OrAIInactive: !aiActive || distance <= 20,
         coverageStabilityOK
       }
     }
@@ -458,10 +458,10 @@ function vipSelection(prediction, ai) {
     distance <= 14 && stabilityOK;
 
   const drawCoverage =
-    sportBetOneXTwoAvailable && top150Team && aiActive && usableData && sampleOK && venueSampleOK &&
+    sportBetOneXTwoAvailable && top150Team && usableData && sampleOK && venueSampleOK &&
     drawProb >= 28 && drawEdge >= 1 &&
-    aiPick === "Draw" && agreement >= 65 &&
-    distance <= 20 && coverageStabilityOK;
+    (!aiActive || (aiPick === "Draw" && agreement >= 65 && distance <= 20)) &&
+    coverageStabilityOK;
 
   const draw = {
     market: "DRAW",
@@ -485,9 +485,9 @@ function vipSelection(prediction, ai) {
       coverage: {
         probabilityMin28: drawProb >= 28,
         drawEdgeMin1: drawEdge >= 1,
-        aiDraw: aiPick === "Draw",
-        agreementMin65: agreement >= 65,
-        modelDistanceMax20: distance <= 20,
+        aiDrawOrAIInactive: !aiActive || aiPick === "Draw",
+        agreementMin65OrAIInactive: !aiActive || agreement >= 65,
+        modelDistanceMax20OrAIInactive: !aiActive || distance <= 20,
         coverageStabilityOK
       }
     }
@@ -507,10 +507,10 @@ function vipSelection(prediction, ai) {
     agreement >= 75 && stabilityOK;
 
   const bttsCoverage =
-    sportBetBttsAvailable && top150Team && aiActive && usableData && sampleOK && venueSampleOK &&
-    bttsConfidence >= 53 && bttsEdge >= 4 &&
-    aiBttsPick === bttsPick && bttsDistance <= 20 &&
-    agreement >= 65 && coverageStabilityOK;
+    sportBetBttsAvailable && top150Team && usableData && sampleOK && venueSampleOK &&
+    bttsConfidence >= 52 && bttsEdge >= 4 &&
+    (!aiActive || (aiBttsPick === bttsPick && bttsDistance <= 20 && agreement >= 65)) &&
+    coverageStabilityOK;
 
   const btts = {
     market: "BTTS",
@@ -536,9 +536,9 @@ function vipSelection(prediction, ai) {
       coverage: {
         confidenceMin53: bttsConfidence >= 53,
         edgeMin4: bttsEdge >= 4,
-        aiSameSignal: aiBttsPick === bttsPick,
-        bttsModelDistanceMax20: bttsDistance <= 20,
-        agreementMin65: agreement >= 65,
+        aiSameSignalOrAIInactive: !aiActive || aiBttsPick === bttsPick,
+        bttsModelDistanceMax20OrAIInactive: !aiActive || bttsDistance <= 20,
+        agreementMin65OrAIInactive: !aiActive || agreement >= 65,
         coverageStabilityOK
       }
     }
