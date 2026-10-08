@@ -405,7 +405,7 @@ function vipSelection(prediction, ai) {
     probability: round(topProbability, 1),
     margin: round(margin, 1),
     eligible:
-      sportBetAvailable && aiActive && usableData && sampleOK && venueSampleOK
+      sportBetAvailable && aiActive && usableData && sampleOK && venueSampleOK &&
       Number(prediction?.confidence || 0) >= 56 &&
       topProbability >= 52 && margin >= 6 &&
       agreement >= 75 && aiPick === topPick &&
@@ -429,12 +429,12 @@ function vipSelection(prediction, ai) {
     probability: round(drawProb, 1),
     margin: round(drawEdge, 1),
     eligible:
-      sportBetAvailable && aiActive && usableData && sampleOK && venueSampleOK
+      sportBetAvailable && aiActive && usableData && sampleOK && venueSampleOK &&
       drawProb >= 29 && drawEdge >= 2 &&
       aiPick === "Draw" && agreement >= 75 &&
       distance <= 14 && stabilityOK,
     criteria: {
-      aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      sportBetAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
       probabilityMin29: drawProb >= 29,
       drawEdgeMin2: drawEdge >= 2,
       aiDraw: aiPick === "Draw",
@@ -459,12 +459,12 @@ function vipSelection(prediction, ai) {
     edge: round(bttsEdge, 1),
     modelDistance: round(bttsDistance, 1),
     eligible:
-      sportBetAvailable && aiActive && usableData && sampleOK && venueSampleOK
+      sportBetAvailable && aiActive && usableData && sampleOK && venueSampleOK &&
       bttsConfidence >= 56 && bttsEdge >= 6 &&
       aiBttsPick === bttsPick && bttsDistance <= 14 &&
       agreement >= 75 && stabilityOK,
     criteria: {
-      aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      sportBetAvailable, aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
       confidenceMin56: bttsConfidence >= 56,
       edgeMin6: bttsEdge >= 6,
       aiSameSignal: aiBttsPick === bttsPick,
