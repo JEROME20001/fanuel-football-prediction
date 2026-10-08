@@ -204,7 +204,7 @@ function sportBetMarketFlags(event){
 }
 
 function sportBetOddsForEvent(event){
-  const out={oneXTwo:[],btts:[],doubleChance:[],totals:{}};
+  const out={oneXTwo:[],btts:[],doubleChance:[],drawNoBet:[],teamToScore:[],totals:{}};
   const marketsRaw=Array.isArray(event?.markets)?event.markets:
     Array.isArray(event?.market)?event.market:
     (event?.markets&&typeof event.markets==="object"?Object.values(event.markets):[]);
@@ -223,9 +223,9 @@ function sportBetOddsForEvent(event){
     if(!activeValue(market?.status??market?.marketStatus)) continue;
     const mid=normalizeMarketId(market), desc=normalizeDesc(market);
     const outcomes=normalizeOutcomes(market);
-    const is1x2=mid==="1"||/1x2|match result|full time result/.test(desc);
+    const is1x2=["1","60100","60200"].includes(mid)||/1x2|match result|full time result/.test(desc);
     const isBtts=mid==="29"||/gg\s*\/\s*ng|both teams to score|btts/.test(desc);
-    const isDc=mid==="10"||/double chance/.test(desc);
+    const isDc=mid==="10"||/double chance/.test(desc);\n    const isDnb=mid==="11"||/draw no bet|dnb/.test(desc);\n    const isTeamScore=mid==="23"||mid==="24"||mid==="30"||/team.*to score|teams.*to score/.test(desc);
     const isTotal=mid==="18"||/over\s*\/\s*under|total goals|over\s*under/.test(desc);
     for(const rawOutcome of outcomes){
       const o=rawOutcome?.outcome&&typeof rawOutcome.outcome==="object"?rawOutcome.outcome:rawOutcome;
@@ -249,7 +249,7 @@ function sportBetOddsForEvent(event){
       }else if(isBtts){
         const pick=/^(yes|gg)\b|\byes\b|\bgg\b/.test(od)?"BTTS YES":/^(no|ng)\b|\bno\b|\bng\b/.test(od)?"BTTS NO":null;
         if(pick) out.btts.push({...item,pick});
-      }else if(isDc){
+      }else if(isDnb){\n        const id=item.outcomeId;\n        const pick=id==="1"?"Home Win DNB":id==="2"?"Away Win DNB":/\\bhome\\b/.test(od)?"Home Win DNB":/\\baway\\b/.test(od)?"Away Win DNB":null;\n        if(pick) out.drawNoBet.push({...item,pick});\n      }else if(isTeamScore){\n        const teamPick=/\\bhome\\b/.test(od)?"Home To Score":/\\baway\\b/.test(od)?"Away To Score":/\\byes\\b/.test(od)?"Team To Score YES":/\\bno\\b/.test(od)?"Team To Score NO":null;\n        if(teamPick) out.teamToScore.push({...item,pick:teamPick});\n      }else if(isDc){
         const pick=/\b1x\b|home\s*\/\s*draw|home\s+or\s+draw/.test(od)?"1X":
           /\bx2\b|draw\s*\/\s*away|draw\s+or\s+away/.test(od)?"X2":
           /\b12\b|home\s*\/\s*away|home\s+or\s+away/.test(od)?"12":null;
@@ -382,7 +382,7 @@ function markSportyBetAvailability(matches, sporty){
       draw:Boolean(sb.draw),
       btts:Boolean(sb.btts)
     }:{oneXTwo:false,draw:false,btts:false};
-    m.sportyBetOdds=sb?.odds||{oneXTwo:[],btts:[],doubleChance:[],totals:{}};
+    m.sportyBetOdds=sb?.odds||{oneXTwo:[],btts:[],doubleChance:[],drawNoBet:[],teamToScore:[],totals:{}};
     m.bookmaker=sb?"SportyBet":null;
     return m;
   });
@@ -679,7 +679,7 @@ async function analyze(fixtureId,suppliedMatch,options={}){
 function countSportyOdds(o){
   if(!o) return 0;
   const t=o.totals&&typeof o.totals==="object" ? Object.values(o.totals).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0) : 0;
-  return (o.oneXTwo||[]).length+(o.btts||[]).length+(o.doubleChance||[]).length+t;
+  return (o.oneXTwo||[]).length+(o.btts||[]).length+(o.doubleChance||[]).length+(o.drawNoBet||[]).length+(o.teamToScore||[]).length+t;
 }
 function dailyOdds15Candidates(predictions){
   const rows=[];
@@ -696,7 +696,6 @@ function dailyOdds15Candidates(predictions){
     const confidence=Number(p.confidence||p.ai?.confidence||0);
     if(confidence<50) continue;
     const risk=String(p.risk||p.ai?.risk||"").toLowerCase();
-    if(risk.includes("high")) continue;
 
     const odds=p.sportyBetOdds||{};
     const add=(market,pick,odd,prob)=>{
@@ -704,7 +703,8 @@ function dailyOdds15Candidates(predictions){
       if(!Number.isFinite(o)||o<1.15||o>4.0||!Number.isFinite(pr)) return;
       const implied=100/o;
       const edge=pr-implied;
-      const safety=pr+(quality==="high"?7:3)+(confidence-50)*0.4+edge*0.5;
+      const penalty=risk.includes("high")?24:0;
+      const safety=pr+(quality==="high"?7:3)+(confidence-50)*0.4+edge*0.5-penalty;
       rows.push({
         fixtureId:String(p.fixtureId||""),
         match:p.match||((p.homeTeam||"Home")+" vs "+(p.awayTeam||"Away")),
@@ -736,6 +736,21 @@ function dailyOdds15Candidates(predictions){
       const pr=dcProb(p,pick);
       if(x&&pr>=65) add("Double Chance",pick,x.odds,pr);
     }
+
+    const dnb=Array.isArray(odds.drawNoBet)?odds.drawNoBet:[];
+    const homeProb=Number(p.probabilities?.home||0), awayProb=Number(p.probabilities?.away||0);
+    const dnbHome=dnb.find(v=>v.pick==="Home Win DNB");
+    const dnbAway=dnb.find(v=>v.pick==="Away Win DNB");
+    if(dnbHome&&homeProb+awayProb>0&&homeProb/(homeProb+awayProb)>=0.60) add("Draw No Bet","Home Win DNB",dnbHome.odds,homeProb/(homeProb+awayProb)*100);
+    if(dnbAway&&homeProb+awayProb>0&&awayProb/(homeProb+awayProb)>=0.60) add("Draw No Bet","Away Win DNB",dnbAway.odds,awayProb/(homeProb+awayProb)*100);
+
+    const teamScores=Array.isArray(odds.teamToScore)?odds.teamToScore:[];
+    const exp=p.expectedGoals||{};
+    const homeScoreProb=(1-Math.exp(-Math.max(0,Number(exp.home||0))))*100;
+    const awayScoreProb=(1-Math.exp(-Math.max(0,Number(exp.away||0))))*100;
+    const hs=teamScores.find(v=>v.pick==="Home To Score"), as=teamScores.find(v=>v.pick==="Away To Score");
+    if(hs&&homeScoreProb>=68) add("Team To Score","Home To Score",hs.odds,homeScoreProb);
+    if(as&&awayScoreProb>=68) add("Team To Score","Away To Score",as.odds,awayScoreProb);
 
     const bProb=Number(p.btts||p.ai?.bttsProbability||0);
     const bPick=bProb>=50?"BTTS YES":"BTTS NO";
@@ -784,13 +799,14 @@ async function buildDailyOdds15(date,predictions){
       (p?.sportyBetEventId&&String(x?.eventId||"")===String(p.sportyBetEventId)) ||
       (teamNamesMatch(home,x?.homeTeam)&&teamNamesMatch(away,x?.awayTeam))
     );
-    return sb?{...p,sportyBetOdds:sb.odds||{oneXTwo:[],btts:[],doubleChance:[],totals:{}},sportyBetEventId:sb.eventId}:p;
+    return sb?{...p,sportyBetOdds:sb.odds||{oneXTwo:[],btts:[],doubleChance:[],drawNoBet:[],teamToScore:[],totals:{}},sportyBetEventId:sb.eventId}:p;
   });
 
   const all=dailyOdds15Candidates(enriched);
   // Final betslip stays at exactly five picks, but the search pool is larger
   // so one weak/low-odds candidate cannot block the daily target.
-  const pool=all.slice(0,35);
+  const safePool=all.filter(x=>!String(x.risk||"").toLowerCase().includes("high"));
+  const pool=(safePool.length>=5?safePool:all).slice(0,45);
   let best=null;
   const TARGET=15, MIN_TARGET=12, MAX_TARGET=18;
 
