@@ -701,8 +701,7 @@
       );
 
       // Start prediction automatically as soon as matches are displayed.
-      const deepCandidates = matches.filter(m => m.vipCandidate === true).slice(0, 150);
-      autoAnalyzeMatches(deepCandidates, matches);
+      autoAnalyzeMatches(matches, matches);
 
     } catch (error) {
 
@@ -800,7 +799,7 @@
 
         </div>
         <div class="prediction" style="margin-top:15px;">
-          <span class="spinner"></span> ${match.vipCandidate ? "VIP screening in progress..." : "Regular prediction loading..."}
+          <span class="spinner"></span> 🧠 Deep Analysis in progress...
         </div>
 
 <div
@@ -903,79 +902,38 @@
   }
 
   async function autoAnalyzeMatches(matches, allMatches = matches) {
-    const pool = matches.slice(0, 150);
-    const batchSize = 20;
+    const pool = allMatches.slice(0, 150);
     const concurrency = 8;
-    const targetVip = 7;
+    let nextIndex = 0;
     let completed = 0;
     let vipCount = 0;
-    let batchStart = 0;
-    const processed = new Set();
-
-    const fixtureKey = (match, index) => String(
-      match?.id || match?.slug || match?.raw?.id || match?.raw?.slug ||
-      match?.raw?.match_id || match?.raw?.fixture_id || ("auto-" + index)
-    );
 
     showStatus(
-      "🧠 VIP deep screening started: 0/" + pool.length +
-      " Top-150 SportyBet candidates available. Target: 7 VIP picks.",
+      "🧠 Deep Analysis started: 0/" + pool.length +
+      " fixtures • VIP detection active • target: 7+ when justified.",
       "success"
     );
 
-    async function screenBatch(batch, offset) {
-      let nextIndex = 0;
-      async function worker() {
-        while (true) {
-          const localIndex = nextIndex++;
-          if (localIndex >= batch.length) return;
-          const globalIndex = offset + localIndex;
-          const match = batch[localIndex];
-          const outcome = await analyzeMatch(match, globalIndex, true);
-          processed.add(fixtureKey(match, globalIndex));
-          if (outcome?.eligible) vipCount++;
-          completed++;
-          showStatus(
-            "🧠 VIP deep screening: " + completed + "/" + pool.length +
-            " candidates checked • " + vipCount + " VIP picks found.",
-            "success"
-          );
-        }
-      }
-      await Promise.all(Array.from(
-        {length: Math.min(concurrency, batch.length)},
-        () => worker()
-      ));
-    }
-
-    while (batchStart < pool.length && vipCount < targetVip) {
-      const batch = pool.slice(batchStart, batchStart + batchSize);
-      await screenBatch(batch, batchStart);
-      batchStart += batchSize;
-    }
-
-    const regularPool = allMatches.filter((match, index) => !processed.has(fixtureKey(match, index)));
-    let regularNext = 0;
-    let regularCompleted = 0;
-
-    async function regularWorker() {
+    async function worker() {
       while (true) {
-        const index = regularNext++;
-        if (index >= regularPool.length) return;
-        const match = regularPool[index];
-        await analyzeMatch(match, index + pool.length, false);
-        regularCompleted++;
+        const index = nextIndex++;
+        if (index >= pool.length) return;
+        const match = pool[index];
+        const outcome = await analyzeMatch(match, index, true);
+        if (outcome?.eligible) vipCount++;
+        completed++;
+
         showStatus(
-          "📊 Regular predictions: " + regularCompleted + "/" + regularPool.length +
-          " fixtures completed • VIP picks: " + vipCount + ".",
+          "🧠 Deep Analysis: " + completed + "/" + pool.length +
+          " fixtures analyzed • " + vipCount + " VIP picks qualified.",
           "success"
         );
       }
     }
 
     await Promise.all(Array.from(
-      {length: Math.min(concurrency, regularPool.length)},
-      () => regularWorker()
+      {length: Math.min(concurrency, pool.length)},
+      () => worker()
     ));
 
     const matchContainer = document.getElementById("matches");
@@ -986,14 +944,15 @@
     orderedCards.forEach(card => matchContainer.appendChild(card));
 
     const count = document.getElementById("matchCount");
-    count.textContent = allMatches.length + " fixtures • " + vipCount +
-      " VIP pick" + (vipCount === 1 ? "" : "s") + " • regular predictions available";
+    count.textContent = pool.length + " fixtures • " + vipCount +
+      " VIP pick" + (vipCount === 1 ? "" : "s") + " • all fixtures deep analyzed";
 
     showStatus(
       vipCount
-        ? "✅ Daily screening completed: " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s") +
-          " found. All remaining fixtures have regular predictions."
-        : "ℹ️ No VIP qualified today. All fixtures have regular predictions; no unsupported VIP pick was forced.",
+        ? "✅ Deep Analysis completed: " + vipCount +
+          " VIP pick" + (vipCount === 1 ? "" : "s") +
+          " qualified. Other fixtures also received Deep Analysis and remain regular predictions."
+        : "ℹ️ No VIP qualified today. All fixtures received Deep Analysis and regular predictions; no unsupported VIP pick was forced.",
       vipCount ? "success" : "error"
     );
 
@@ -1061,7 +1020,7 @@
 
     box.innerHTML = `
       <div class="prediction regular-prediction">
-        <h3>📊 Regular Prediction <span class="ai-badge">STANDARD</span></h3>
+        <h3>🧠 Deep Analysis Prediction <span class="ai-badge">DEEP</span></h3>
         <div class="pick">${escapeHTML(pick)}</div>
         <div class="confidence" style="margin-top:4px;">Confidence: <b>${escapeHTML(prediction.confidence ?? 0)}%</b></div>
         <div class="probabilities">
@@ -1081,7 +1040,7 @@
           <b>Analysis</b><br>${escapeHTML(prediction.ai?.analysis || "Regular statistical prediction based on available form and goal data.")}
           <div class="risk"><b>Risk:</b> ${escapeHTML(prediction.risk || prediction.ai?.risk || "Regular prediction")}</div>
         </div>
-        <div style="margin-top:10px;font-size:12px;color:#89a7c2;">VIP status: <b>Not qualified</b> • This match remains available as a regular prediction.</div>
+        <div style="margin-top:10px;font-size:12px;color:#89a7c2;">VIP status: <b>Not qualified</b> • Deep Analysis completed; this match remains as a regular prediction.</div>
       </div>
     `;
   }
