@@ -219,10 +219,18 @@ async function getTeamHistory(team) {
   }
   for(const slug of [...new Set(candidates)]){
     const key="team:"+slug, cached=cacheGet(key); if(cached) return cached;
-    try{
-      const data=await sportScoreRequest(`/api/widget/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`);
-      const fixtures=extractMatches(data); cacheSet(key,fixtures,30); return fixtures;
-    }catch(e){ console.log("Team history failed:",obj.name||slug,e.message); }
+    const attempts = [
+      `/api/v1/fixtures/?sport=football&team=${encodeURIComponent(slug)}&status=finished&limit=30`,
+      `/api/v1/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`,
+      `/api/widget/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`
+    ];
+    for (const endpoint of attempts) {
+      try{
+        const data=await sportScoreRequest(endpoint);
+        const fixtures=extractMatches(data);
+        if (fixtures.length) { cacheSet(key,fixtures,30); return fixtures; }
+      }catch(e){ console.log("Team history attempt failed:",obj.name||slug,e.message); }
+    }
   }
   return [];
 }
