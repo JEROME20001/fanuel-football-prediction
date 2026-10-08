@@ -325,7 +325,7 @@ function findTeamSearchResult(data, wanted) {
     if(!name || !slug) return;
     const s=String(slug).trim();
     if(!s || /^\\d+$/.test(s)) return;
-    list.push({name:String(name),slug:s.replace(/^.*\\//,"").replace(/\\?.*$/,"").replace(/#.*$/,"")});
+    list.push({name:String(name),slug:s.replace(/^.*\//,"").replace(/\?.*$/,"").replace(/#.*$/,"")});
   };
   function walk(v) {
     if (!v || typeof v !== "object") return;
