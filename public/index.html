@@ -649,7 +649,7 @@
 
       const vipCandidateTotal = matches.filter(m => m.vipCandidate === true).length;
       count.textContent =
-        `${matches.length} matches on ${date} • ${vipCandidateTotal} SportyBet/Top-150 candidates • deep scan capped at 30`;
+        `${matches.length} matches on ${date} • ${vipCandidateTotal} SportyBet/Top-150 candidates • adaptive VIP scan`;
 
       if (!matches.length) {
 
@@ -697,7 +697,7 @@
       );
 
       // Start prediction automatically as soon as matches are displayed.
-      const deepCandidates = matches.filter(m => m.vipCandidate === true).slice(0, 30);
+      const deepCandidates = matches.filter(m => m.vipCandidate === true).slice(0, 60);
       autoAnalyzeMatches(deepCandidates);
 
     } catch (error) {
@@ -903,37 +903,62 @@
   }
 
   async function autoAnalyzeMatches(matches) {
-    // Analyze several matches at once with controlled concurrency.
-    const total = matches.length;
-    const concurrency = Math.min(8, total);
+    // Adaptive deep screening:
+    // Start fast, then continue only when more VIP coverage is needed.
+    const pool = matches.slice(0, 60);
+    const batchSize = 16;
+    const concurrency = 8;
+    const targetVip = 3;
     let completed = 0;
     let vipCount = 0;
-    let nextIndex = 0;
+    let batchStart = 0;
 
     showStatus(
-      "🧠 VIP deep screening started: 0/" + total + " candidates checked. VIP picks are highlighted; all fixtures remain visible.",
+      "🧠 VIP deep screening started: 0/" + pool.length + " candidates available. Starting with the fastest batch.",
       "success"
     );
 
-    async function worker() {
-      while (true) {
-        const index = nextIndex++;
-        if (index >= total) return;
+    async function screenBatch(batch, offset) {
+      let nextIndex = 0;
 
-        const outcome = await analyzeMatch(matches[index], index);
-        if (outcome?.eligible) vipCount++;
-        completed++;
+      async function worker() {
+        while (true) {
+          const localIndex = nextIndex++;
+          if (localIndex >= batch.length) return;
 
-        showStatus(
-          "🧠 VIP deep screening: " + completed + "/" + total + " checked • " + vipCount + " VIP picks found.",
-          completed === total ? "success" : ""
-        );
+          const globalIndex = offset + localIndex;
+          const outcome = await analyzeMatch(batch[localIndex], globalIndex);
+          if (outcome?.eligible) vipCount++;
+          completed++;
+
+          showStatus(
+            "🧠 VIP deep screening: " + completed + "/" + pool.length +
+            " candidates checked • " + vipCount + " VIP picks found.",
+            "success"
+          );
+        }
       }
+
+      await Promise.all(
+        Array.from(
+          {length: Math.min(concurrency, batch.length)},
+          () => worker()
+        )
+      );
     }
 
-    await Promise.all(
-      Array.from({length: concurrency}, () => worker())
-    );
+    while (batchStart < pool.length && vipCount < targetVip) {
+      const batch = pool.slice(batchStart, batchStart + batchSize);
+      await screenBatch(batch, batchStart);
+      batchStart += batchSize;
+
+      const matchContainer = document.getElementById("matches");
+      const orderedCards = Array.from(matchContainer.querySelectorAll(".match")).sort((a,b) =>
+        Number(b.dataset.vip || 0) - Number(a.dataset.vip || 0) ||
+        Number(b.dataset.bigLeague || 0) - Number(a.dataset.bigLeague || 0)
+      );
+      orderedCards.forEach(card => matchContainer.appendChild(card));
+    }
 
     const matchContainer = document.getElementById("matches");
     const orderedCards = Array.from(matchContainer.querySelectorAll(".match")).sort((a,b) =>
@@ -943,11 +968,15 @@
     orderedCards.forEach(card => matchContainer.appendChild(card));
 
     const count = document.getElementById("matchCount");
-    count.textContent = total + " matches • " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s");
+    count.textContent =
+      completed + " deep candidates checked • " + vipCount +
+      " VIP pick" + (vipCount === 1 ? "" : "s");
 
     showStatus(
       vipCount
-        ? "👑 VIP deep screening completed: " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
+        ? "👑 VIP deep screening completed: " + vipCount +
+          " VIP pick" + (vipCount === 1 ? "" : "s") +
+          " found. The scanner stops early after reaching the VIP target."
         : "🛑 No Top-150 SportyBet match qualified for VIP on the selected date. All fixtures remain visible; the system did not force a weak VIP prediction.",
       vipCount ? "success" : "error"
     );
