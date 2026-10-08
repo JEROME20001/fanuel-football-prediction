@@ -1021,6 +1021,20 @@
               Events with odds: <b>${escapeHTML(slip.sportyBetEventsWithOdds ?? 0)}</b><br>
               Mfumo haujalazimisha kuongeza game yenye risk kubwa ili kufikisha 15.00.
             </div>
+            ${Array.isArray(slip.candidatePreview) && slip.candidatePreview.length ? `
+              <div class="status" style="margin-top:10px;">
+                <b>🔎 Top Daily 15 Candidates</b>
+              </div>
+              <div class="stats" style="display:block;margin-top:8px;">
+                ${slip.candidatePreview.map(x => `
+                  <div class="stat" style="margin-bottom:8px;">
+                    <b>${escapeHTML(x.number)}. ${escapeHTML(x.match)}</b><br>
+                    ${escapeHTML(x.market)}: <b>${escapeHTML(x.pick)}</b> • Odds <b>${escapeHTML(x.odds)}</b><br>
+                    <small>Model ${escapeHTML(x.probability)}% • Edge ${escapeHTML(x.edge)}% • ${escapeHTML(x.quality).toUpperCase()} • Risk: ${escapeHTML(x.risk)}</small>
+                  </div>
+                `).join("")}
+              </div>
+            ` : ""}
           </div>
         `;
         return;
