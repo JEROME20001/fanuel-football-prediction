@@ -702,7 +702,7 @@
 
       // Start prediction automatically as soon as matches are displayed.
       const deepCandidates = matches.filter(m => m.vipCandidate === true).slice(0, 150);
-      autoAnalyzeMatches(deepCandidates);
+      autoAnalyzeMatches(deepCandidates, matches);
 
     } catch (error) {
 
@@ -800,7 +800,7 @@
 
         </div>
         <div class="prediction" style="margin-top:15px;">
-          <span class="spinner"></span> VIP screening in progress...
+          <span class="spinner"></span> ${match.vipCandidate ? "VIP screening in progress..." : "Regular prediction loading..."}
         </div>
 
 <div
@@ -816,7 +816,7 @@
      AUTOMATIC MATCH ANALYSIS
   ========================= */
 
-  async function analyzeMatch(match, index) {
+  async function analyzeMatch(match, index, deepAnalysis = true) {
 
     const fixture = match.fixture || match;
     const fixtureId =
@@ -852,7 +852,8 @@
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
           fixtureId: fixtureId.startsWith("auto-") ? "" : fixtureId,
-          match: match
+          match: match,
+          deepAnalysis: Boolean(deepAnalysis)
         })
       });
 
@@ -879,13 +880,8 @@
       if (!vip.eligible) {
         card.dataset.vip = "0";
         card.dataset.bigLeague = String(match.bigLeague ? 1 : 0);
-        predictionBox.innerHTML = `
-          <div class="prediction" style="border-left-color:#5b7087;">
-            <b>Screened</b><br>
-            This match did not pass the VIP quality gate, Top-150 filter, or SportyBet availability.<br>
-            <small>It remains visible as a regular fixture. VIP-qualified picks are prioritized above and must be available on SportyBet.</small>
-          </div>`;
-        return {eligible:false};
+        displayRegularPrediction(predictionBox, data.prediction);
+        return {eligible:false, processed:true};
       }
 
       card.dataset.vip = "1";
@@ -906,9 +902,7 @@
     }
   }
 
-  async function autoAnalyzeMatches(matches) {
-    // Adaptive deep screening:
-    // Start fast, then continue only when more VIP coverage is needed.
+  async function autoAnalyzeMatches(matches, allMatches = matches) {
     const pool = matches.slice(0, 150);
     const batchSize = 20;
     const concurrency = 8;
@@ -916,25 +910,31 @@
     let completed = 0;
     let vipCount = 0;
     let batchStart = 0;
+    const processed = new Set();
+
+    const fixtureKey = (match, index) => String(
+      match?.id || match?.slug || match?.raw?.id || match?.raw?.slug ||
+      match?.raw?.match_id || match?.raw?.fixture_id || ("auto-" + index)
+    );
 
     showStatus(
-      "🧠 VIP deep screening started: 0/" + pool.length + " Top-150 SportyBet candidates available. Target: 7 VIP picks.",
+      "🧠 VIP deep screening started: 0/" + pool.length +
+      " Top-150 SportyBet candidates available. Target: 7 VIP picks.",
       "success"
     );
 
     async function screenBatch(batch, offset) {
       let nextIndex = 0;
-
       async function worker() {
         while (true) {
           const localIndex = nextIndex++;
           if (localIndex >= batch.length) return;
-
           const globalIndex = offset + localIndex;
-          const outcome = await analyzeMatch(batch[localIndex], globalIndex);
+          const match = batch[localIndex];
+          const outcome = await analyzeMatch(match, globalIndex, true);
+          processed.add(fixtureKey(match, globalIndex));
           if (outcome?.eligible) vipCount++;
           completed++;
-
           showStatus(
             "🧠 VIP deep screening: " + completed + "/" + pool.length +
             " candidates checked • " + vipCount + " VIP picks found.",
@@ -942,27 +942,41 @@
           );
         }
       }
-
-      await Promise.all(
-        Array.from(
-          {length: Math.min(concurrency, batch.length)},
-          () => worker()
-        )
-      );
+      await Promise.all(Array.from(
+        {length: Math.min(concurrency, batch.length)},
+        () => worker()
+      ));
     }
 
     while (batchStart < pool.length && vipCount < targetVip) {
       const batch = pool.slice(batchStart, batchStart + batchSize);
       await screenBatch(batch, batchStart);
       batchStart += batchSize;
-
-      const matchContainer = document.getElementById("matches");
-      const orderedCards = Array.from(matchContainer.querySelectorAll(".match")).sort((a,b) =>
-        Number(b.dataset.vip || 0) - Number(a.dataset.vip || 0) ||
-        Number(b.dataset.bigLeague || 0) - Number(a.dataset.bigLeague || 0)
-      );
-      orderedCards.forEach(card => matchContainer.appendChild(card));
     }
+
+    const regularPool = allMatches.filter((match, index) => !processed.has(fixtureKey(match, index)));
+    let regularNext = 0;
+    let regularCompleted = 0;
+
+    async function regularWorker() {
+      while (true) {
+        const index = regularNext++;
+        if (index >= regularPool.length) return;
+        const match = regularPool[index];
+        await analyzeMatch(match, index + pool.length, false);
+        regularCompleted++;
+        showStatus(
+          "📊 Regular predictions: " + regularCompleted + "/" + regularPool.length +
+          " fixtures completed • VIP picks: " + vipCount + ".",
+          "success"
+        );
+      }
+    }
+
+    await Promise.all(Array.from(
+      {length: Math.min(concurrency, regularPool.length)},
+      () => regularWorker()
+    ));
 
     const matchContainer = document.getElementById("matches");
     const orderedCards = Array.from(matchContainer.querySelectorAll(".match")).sort((a,b) =>
@@ -972,16 +986,14 @@
     orderedCards.forEach(card => matchContainer.appendChild(card));
 
     const count = document.getElementById("matchCount");
-    count.textContent =
-      completed + " deep candidates checked • " + vipCount +
-      " VIP pick" + (vipCount === 1 ? "" : "s");
+    count.textContent = allMatches.length + " fixtures • " + vipCount +
+      " VIP pick" + (vipCount === 1 ? "" : "s") + " • regular predictions available";
 
     showStatus(
       vipCount
-        ? "👑 VIP deep screening completed: " + vipCount +
-          " VIP pick" + (vipCount === 1 ? "" : "s") +
-          " found. The scanner stops early after reaching the VIP target."
-        : "🛑 No Top-150 SportyBet match qualified for VIP on the selected date. All fixtures remain visible; the system did not force an unsupported VIP prediction.",
+        ? "✅ Daily screening completed: " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s") +
+          " found. All remaining fixtures have regular predictions."
+        : "ℹ️ No VIP qualified today. All fixtures have regular predictions; no unsupported VIP pick was forced.",
       vipCount ? "success" : "error"
     );
 
@@ -989,7 +1001,6 @@
     loadPredictionHistory();
     loadPerformance();
   }
-
   /* =========================
      AI ENGINE DEMO
   ========================= */
@@ -1040,6 +1051,40 @@
      DISPLAY PREDICTION
   ========================= */
 
+  function displayRegularPrediction(box, prediction) {
+    const probabilities = prediction.probabilities || {};
+    const expected = prediction.expectedGoals || {};
+    const quality = prediction.dataQuality || {};
+    const level = String(quality.level || "low").toLowerCase();
+    const qualityLabel = level === "high" ? "🟢 HIGH DATA" : level === "medium" ? "🟡 MEDIUM DATA" : "🔴 LOW DATA";
+    const pick = prediction.pick || "No Strong Pick";
+
+    box.innerHTML = `
+      <div class="prediction regular-prediction">
+        <h3>📊 Regular Prediction <span class="ai-badge">STANDARD</span></h3>
+        <div class="pick">${escapeHTML(pick)}</div>
+        <div class="confidence" style="margin-top:4px;">Confidence: <b>${escapeHTML(prediction.confidence ?? 0)}%</b></div>
+        <div class="probabilities">
+          <div class="prob">HOME<strong>${escapeHTML(probabilities.home ?? 0)}%</strong></div>
+          <div class="prob">DRAW<strong>${escapeHTML(probabilities.draw ?? 0)}%</strong></div>
+          <div class="prob">AWAY<strong>${escapeHTML(probabilities.away ?? 0)}%</strong></div>
+        </div>
+        <div class="stats">
+          <div class="stat"><b>Double Chance</b><br>${escapeHTML(prediction.doubleChance || "N/A")}</div>
+          <div class="stat"><b>Over 1.5</b><br>${escapeHTML(prediction.over15 ?? 0)}%</div>
+          <div class="stat"><b>Over 2.5</b><br>${escapeHTML(prediction.over25 ?? 0)}%</div>
+          <div class="stat"><b>BTTS</b><br>${escapeHTML(prediction.btts ?? 0)}%</div>
+          <div class="stat"><b>Expected Goals</b><br>${escapeHTML(expected.home ?? 0)} - ${escapeHTML(expected.away ?? 0)}</div>
+          <div class="stat"><b>Data Quality</b><br>${escapeHTML(qualityLabel)}</div>
+        </div>
+        <div class="ai-analysis">
+          <b>Analysis</b><br>${escapeHTML(prediction.ai?.analysis || "Regular statistical prediction based on available form and goal data.")}
+          <div class="risk"><b>Risk:</b> ${escapeHTML(prediction.risk || prediction.ai?.risk || "Regular prediction")}</div>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#89a7c2;">VIP status: <b>Not qualified</b> • This match remains available as a regular prediction.</div>
+      </div>
+    `;
+  }
   function displayPrediction(
     box,
     prediction
