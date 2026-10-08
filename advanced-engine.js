@@ -559,11 +559,18 @@ function vipSelection(prediction, ai) {
   const eligibleWithScores = Object.values(markets).filter(m => m.eligible).sort((a,b)=>b.score-a.score);
   const best = eligibleWithScores[0] || null;
 
+  const comboOneXTwo = oneXTwo.eligible && oneXTwo.pick !== "Draw";
+  const comboBtts = btts.eligible;
+  const comboEligible = comboOneXTwo && comboBtts;
+  const comboPick = comboEligible ? oneXTwo.pick + " + " + btts.pick : null;
+
   return {
     eligible: eligibleWithScores.length > 0,
     tier: eligibleWithScores.length ? (eligibleWithScores.some(m => m.strength === "STRONG") ? "VIP STRONG" : "VIP COVERAGE") : "REJECTED",
-    primaryMarket: best?.market || null,
-    primaryPick: best?.pick || null,
+    primaryMarket: comboEligible ? "1X2 + BTTS" : (best?.market || null),
+    primaryPick: comboPick || best?.pick || null,
+    combinedPick: comboPick,
+    combinedEligible: comboEligible,
     score: best?.score || 0,
     topProbability: best?.probability || 0,
     probabilityMargin: best?.margin ?? best?.edge ?? 0,
