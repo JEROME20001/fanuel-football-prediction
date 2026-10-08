@@ -690,64 +690,71 @@ function dailyOdds15Candidates(predictions){
     return pick==="1X"?home+draw:pick==="X2"?away+draw:home+away;
   };
   for(const p of predictions||[]){
-    if(!p?.ai?.enabled||p.pick==="No Strong Pick") continue;
+    if(!p?.ai?.enabled) continue;
     const quality=String(p.dataQuality?.level||"low").toLowerCase();
     if(quality!=="high"&&quality!=="medium") continue;
     const confidence=Number(p.confidence||p.ai?.confidence||0);
-    if(confidence<55) continue;
+    if(confidence<50) continue;
+    const risk=String(p.risk||p.ai?.risk||"").toLowerCase();
+    if(risk.includes("high")) continue;
+
     const odds=p.sportyBetOdds||{};
     const add=(market,pick,odd,prob)=>{
       const o=Number(odd), pr=Number(prob);
-      if(!Number.isFinite(o)||o<=1||!Number.isFinite(pr)||pr<55) return;
+      if(!Number.isFinite(o)||o<1.15||o>4.0||!Number.isFinite(pr)) return;
       const implied=100/o;
       const edge=pr-implied;
-      const risk=String(p.risk||p.ai?.risk||"Unknown");
-      const penalty=/high/i.test(risk)?12:0;
-      const safety=pr+(quality==="high"?6:2)+(confidence-50)*0.3+edge*0.45-penalty;
+      const safety=pr+(quality==="high"?7:3)+(confidence-50)*0.4+edge*0.5;
       rows.push({
         fixtureId:String(p.fixtureId||""),
         match:p.match||((p.homeTeam||"Home")+" vs "+(p.awayTeam||"Away")),
         homeTeam:p.homeTeam||"",
         awayTeam:p.awayTeam||"",
         league:p.league?.name||p.league||"Football",
-        market,pick,odds:o,probability:Math.round(pr*10)/10,
-        impliedProbability:Math.round(implied*10)/10,edge:Math.round(edge*10)/10,
-        confidence:Math.round(confidence*10)/10,quality,risk,safetyScore:Math.round(safety*10)/10,
+        market,pick,odds:o,
+        probability:Math.round(pr*10)/10,
+        impliedProbability:Math.round(implied*10)/10,
+        edge:Math.round(edge*10)/10,
+        confidence:Math.round(confidence*10)/10,
+        quality,
+        risk:p.risk||p.ai?.risk||"Moderate",
+        safetyScore:Math.round(safety*10)/10,
         sportyBetEventId:p.sportyBetEventId||null
       });
     };
 
+    const oneX=Array.isArray(odds.oneXTwo)?odds.oneXTwo:[];
     if(p.pick==="Home Win"||p.pick==="Away Win"){
-      const oneX=Array.isArray(odds.oneXTwo)?odds.oneXTwo:[];
       const x=oneX.find(v=>v.pick===p.pick);
       const pr=p.pick==="Home Win"?Number(p.probabilities?.home||0):Number(p.probabilities?.away||0);
-      if(x) add("1X2",p.pick,x.odds,pr);
+      if(x&&pr>=56) add("1X2",p.pick,x.odds,pr);
     }
 
     const dc=Array.isArray(odds.doubleChance)?odds.doubleChance:[];
     for(const pick of ["1X","X2","12"]){
       const x=dc.find(v=>v.pick===pick);
-      if(x){
-        const pr=dcProb(p,pick);
-        if(pr>=62) add("Double Chance",pick,x.odds,pr);
-      }
+      const pr=dcProb(p,pick);
+      if(x&&pr>=65) add("Double Chance",pick,x.odds,pr);
     }
 
     const bProb=Number(p.btts||p.ai?.bttsProbability||0);
     const bPick=bProb>=50?"BTTS YES":"BTTS NO";
+    const bSafe=Math.max(bProb,100-bProb);
     const bx=(Array.isArray(odds.btts)?odds.btts:[]).find(v=>v.pick===bPick);
-    if(bx) add("GG/NG",bPick,bx.odds,bProb);
+    if(bx&&bSafe>=58) add("GG/NG",bPick,bx.odds,bSafe);
 
     const totals=odds.totals||{};
     for(const spec of [["1.5","Over 1.5",Number(p.over15||0)],["2.5","Over 2.5",Number(p.over25||0)],["3.5","Over 3.5",Number(p.over35||0)]]){
-      const line=spec[0], overPick=spec[1], overProb=spec[2];
+      const line=spec[0],overPick=spec[1],overProb=spec[2];
+      const underPick="Under "+line, underProb=100-overProb;
+      const wanted=overProb>=underProb?overPick:underPick;
+      const prob=Math.max(overProb,underProb);
       const arr=Array.isArray(totals[line])?totals[line]:[];
-      const wanted=overProb>=55?overPick:"Under "+line;
-      const prob=overProb>=55?overProb:100-overProb;
       const x=arr.find(v=>v.pick===wanted);
-      if(x&&prob>=60) add("Total Goals",wanted,x.odds,prob);
+      if(x&&prob>=62) add("Total Goals",wanted,x.odds,prob);
     }
   }
+
   const best=new Map();
   for(const x of rows){
     const key=x.fixtureId+"|"+x.market+"|"+x.pick;
@@ -759,11 +766,9 @@ function dailyOdds15Candidates(predictions){
 
 async function buildDailyOdds15(date,predictions){
   let sporty={matches:[]};
-  try{
-    sporty=await getSportyBetUpcoming(1,date);
-  }catch(e){
-    console.log("Daily Odds 15 SportyBet refresh failed:",e.message);
-  }
+  try{ sporty=await getSportyBetUpcoming(1,date); }
+  catch(e){ console.log("Daily Odds 15 SportyBet refresh failed:",e.message); }
+
   let sportyMatches=Array.isArray(sporty?.matches)?sporty.matches:[];
   const missingOddsEvents=sportyMatches.filter(x=>countSportyOdds(x?.odds)<=0);
   if(missingOddsEvents.length){
@@ -771,35 +776,38 @@ async function buildDailyOdds15(date,predictions){
     const byId=new Map(refreshed.map(x=>[String(x.eventId),x]));
     sportyMatches=sportyMatches.map(x=>byId.get(String(x.eventId))||x);
   }
+
   const enriched=(predictions||[]).map(p=>{
     if(countSportyOdds(p?.sportyBetOdds)>0) return p;
-    const home=p?.homeTeam||"";
-    const away=p?.awayTeam||"";
+    const home=p?.homeTeam||"",away=p?.awayTeam||"";
     const sb=sportyMatches.find(x=>
-      (p?.sportyBetEventId && String(x?.eventId||"")===String(p.sportyBetEventId)) ||
+      (p?.sportyBetEventId&&String(x?.eventId||"")===String(p.sportyBetEventId)) ||
       (teamNamesMatch(home,x?.homeTeam)&&teamNamesMatch(away,x?.awayTeam))
     );
     return sb?{...p,sportyBetOdds:sb.odds||{oneXTwo:[],btts:[],doubleChance:[],totals:{}},sportyBetEventId:sb.eventId}:p;
   });
 
   const all=dailyOdds15Candidates(enriched);
-  const pool=all.filter(x=>x.odds<=3.5&&x.probability>=58).slice(0,60);
+  // Final betslip stays at exactly five picks, but the search pool is larger
+  // so one weak/low-odds candidate cannot block the daily target.
+  const pool=all.slice(0,35);
   let best=null;
+  const TARGET=15, MIN_TARGET=12, MAX_TARGET=18;
 
   const dfs=(start,chosen,product,safety,used)=>{
     if(chosen.length===5){
-      if(product>=14&&product<=16.25){
-        const score=Math.abs(Math.log(product/15))*45-(safety/5)*0.35;
-        if(!best||score<best.score) best={score,product,chosen:[...chosen],avgSafety:safety/5};
-      }
+      if(product<MIN_TARGET||product>MAX_TARGET) return;
+      const distance=Math.abs(Math.log(product/TARGET));
+      const score=distance*55-(safety/5)*0.3;
+      if(!best||score<best.score) best={score,product,chosen:[...chosen],avgSafety:safety/5};
       return;
     }
     for(let i=start;i<pool.length;i++){
       const x=pool[i];
       if(used.has(x.fixtureId)) continue;
       const next=product*x.odds;
-      if(next>16.25) continue;
-      const used2=new Set(used);used2.add(x.fixtureId);
+      if(next>MAX_TARGET) continue;
+      const used2=new Set(used); used2.add(x.fixtureId);
       dfs(i+1,[...chosen,x],next,safety+x.safetyScore,used2);
     }
   };
@@ -808,26 +816,31 @@ async function buildDailyOdds15(date,predictions){
 
   const diag={
     candidateCount:all.length,
+    searchPoolSize:pool.length,
     sportyBetEventsChecked:sportyMatches.length,
     sportyBetEventsWithOdds:sportyMatches.filter(x=>countSportyOdds(x?.odds)>0).length
   };
 
   if(!best){
     return {
-      eligible:false,date,selections:[],totalOdds:null,
-      ...diag,
-      message:"Hakuna combination ya selections 5 yenye odds karibu 15.00 bila kuongeza selection yenye risk kubwa. Mfumo haujalazimisha slip."
+      eligible:false,date,selections:[],totalOdds:null,...diag,
+      message:"Candidates zipo, lakini hakuna combination ya selections 5 inayofika 12.00–18.00 karibu na target 15.00 bila kutumia risk kubwa. Mfumo haujalazimisha slip."
     };
   }
 
   return {
-    eligible:true,type:"DAILY ODDS 15",label:"15 ODDS SURE — 5 PICKS",
-    date,bookmaker:"SportyBet Tanzania",targetOdds:15,
+    eligible:true,
+    type:"DAILY ODDS 15",
+    label:"15 ODDS SURE — 5 PICKS",
+    date,
+    bookmaker:"SportyBet Tanzania",
+    targetOdds:15,
     totalOdds:Math.round(best.product*100)/100,
     selections:best.chosen.map((x,i)=>({...x,number:i+1})),
     averageSafety:Math.round(best.avgSafety*10)/10,
-    ...diag,generatedAt:new Date().toISOString(),
-    disclaimer:"Conservative model selection only. No bet is guaranteed; total odds near 15 carry substantial loss risk."
+    ...diag,
+    generatedAt:new Date().toISOString(),
+    disclaimer:"Conservative model selection only. No bet is guaranteed; accumulator risk remains."
   };
 }
 
