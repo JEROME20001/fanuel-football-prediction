@@ -647,8 +647,9 @@
         We display ALL matches.
       */
 
+      const vipCandidateTotal = matches.filter(m => m.vipCandidate === true).length;
       count.textContent =
-        `${matches.length} matches on ${date} • Top 150 + SportyBet VIP screening`;
+        `${matches.length} matches on ${date} • ${vipCandidateTotal} SportyBet/Top-150 candidates • deep scan capped at 30`;
 
       if (!matches.length) {
 
@@ -668,7 +669,7 @@
       }
 
       showStatus(
-        `🧠 Screening selected-day candidates • Top 150 teams + SportyBet...`,
+        `🧠 Screening selected-day shortlist • Top 150 team pool + SportyBet...`,
         "success"
       );
 
@@ -696,7 +697,8 @@
       );
 
       // Start prediction automatically as soon as matches are displayed.
-      autoAnalyzeMatches(matches.filter(m => m.vipCandidate === true));
+      const deepCandidates = matches.filter(m => m.vipCandidate === true).slice(0, 30);
+      autoAnalyzeMatches(deepCandidates);
 
     } catch (error) {
 
@@ -903,13 +905,13 @@
   async function autoAnalyzeMatches(matches) {
     // Analyze several matches at once with controlled concurrency.
     const total = matches.length;
-    const concurrency = Math.min(4, total);
+    const concurrency = Math.min(8, total);
     let completed = 0;
     let vipCount = 0;
     let nextIndex = 0;
 
     showStatus(
-      "🧠 VIP screening started: 0/" + total + " candidates checked. VIP picks are highlighted; all fixtures remain visible.",
+      "🧠 VIP deep screening started: 0/" + total + " candidates checked. VIP picks are highlighted; all fixtures remain visible.",
       "success"
     );
 
@@ -923,7 +925,7 @@
         completed++;
 
         showStatus(
-          "🧠 VIP screening: " + completed + "/" + total + " checked • " + vipCount + " VIP picks found.",
+          "🧠 VIP deep screening: " + completed + "/" + total + " checked • " + vipCount + " VIP picks found.",
           completed === total ? "success" : ""
         );
       }
@@ -945,7 +947,7 @@
 
     showStatus(
       vipCount
-        ? "👑 VIP screening completed: " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
+        ? "👑 VIP deep screening completed: " + vipCount + " VIP pick" + (vipCount === 1 ? "" : "s") + " found. All other fixtures remain visible below."
         : "🛑 No Top-150 SportyBet match qualified for VIP on the selected date. All fixtures remain visible; the system did not force a weak VIP prediction.",
       vipCount ? "success" : "error"
     );
