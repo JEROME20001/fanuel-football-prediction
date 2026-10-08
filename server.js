@@ -849,7 +849,7 @@ async function api(req,res,url){
     }
     if(req.method!=="POST") return sendJSON(res,405,{ok:false,error:"GET or POST required"});
     let body="";req.on("data",c=>{body+=c.toString();if(body.length>5*1024*1024)req.destroy();});
-    req.on("end",()=>{
+    req.on("end",async()=>{
       try{
         const d=JSON.parse(body||"{}"),date=String(d.date||"").trim(),predictions=Array.isArray(d.predictions)?d.predictions:[];
         if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return sendJSON(res,400,{ok:false,error:"date ya YYYY-MM-DD inahitajika"});
