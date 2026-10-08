@@ -243,7 +243,8 @@ function sportBetOddsForEvent(event){
   }
   return out;
 }
-\nfunction sportBetTimestamp(value){
+
+function sportBetTimestamp(value){
   const n=Number(value);
   if(!Number.isFinite(n) || n<=0) return null;
   return n < 100000000000 ? n * 1000 : n;
@@ -555,7 +556,8 @@ async function analyze(fixtureId,suppliedMatch,options={}){
     const raw=suppliedMatch.raw||suppliedMatch;
     const suppliedSportyAvailable = suppliedMatch.sportyBetAvailable === true;
     const suppliedSportyMarkets = suppliedMatch.sportyBetMarkets || null;
-    const suppliedSportyEventId = suppliedMatch.sportyBetEventId || null;\n    const suppliedSportyOdds = suppliedMatch.sportyBetOdds || null;
+    const suppliedSportyEventId = suppliedMatch.sportyBetEventId || null;
+    const suppliedSportyOdds = suppliedMatch.sportyBetOdds || null;
     fixture=normalizeMatch(raw);
     fixture.id=String(suppliedMatch.id||suppliedMatch.slug||raw.id||raw.slug||raw.match_id||raw.fixture_id||fixture.id||("auto-"+fixture.homeTeam.name+"-"+fixture.awayTeam.name+"-"+Date.now()));
     fixture.slug=suppliedMatch.slug||raw.slug||fixture.id;
@@ -711,7 +713,8 @@ function buildDailyOdds15(date,predictions){
     disclaimer:"Conservative model selection only. No bet is guaranteed; total odds near 15 carry substantial loss risk."
   };
 }
-\nfunction sendJSON(res,status,data){res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","Access-Control-Allow-Origin":"*"});res.end(JSON.stringify(data));}
+
+function sendJSON(res,status,data){res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","Access-Control-Allow-Origin":"*"});res.end(JSON.stringify(data));}
 function normalizeTeamName(name){return String(name||"").toLowerCase().replace(/&/g,"and").replace(/[^a-z0-9]+/g," ").trim();}
 function actualPick(h,a){return h>a?"Home Win":h<a?"Away Win":"Draw";}
 function settlementMetrics(prediction,homeScore,awayScore){const pick=actualPick(homeScore,awayScore),total=homeScore+awayScore;const predictedScore=String(prediction?.correctScore||"");return {actualPick:pick,actualOver25:total>=3,actualBTTS:homeScore>=1&&awayScore>=1,actualScore:`${homeScore}-${awayScore}`,correct:prediction?.pick==="No Strong Pick"?null:prediction?.pick===pick,over25Correct:Number(prediction?.over25||0)>=50?total>=3:total<3,bttsCorrect:Number(prediction?.btts||0)>=50?(homeScore>=1&&awayScore>=1):!(homeScore>=1&&awayScore>=1),correctScore:predictedScore===`${homeScore}-${awayScore}`};}
@@ -779,7 +782,8 @@ async function api(req,res,url){
       }catch(e){return sendJSON(res,400,{ok:false,error:"Daily Odds 15 generation failed: "+e.message});}
     });return;
   }
-\n  if(url.pathname==="/api/ai-demo"){
+
+  if(url.pathname==="/api/ai-demo"){
     try{const stat={fixtureId:"demo-001",match:"Demo United vs Demo City",homeTeam:"Demo United",awayTeam:"Demo City",pick:"Home Win",confidence:55,probabilities:{home:55,draw:25,away:20},over25:58,btts:54};const ai=await runFootballAI({fixture:{id:"demo-001",home:{name:"Demo United"},away:{name:"Demo City"},league:{name:"AI Test"}},homeForm:{games:5,wins:3,draws:1,losses:1,goalsFor:1.8,goalsAgainst:.9},awayForm:{games:5,wins:2,draws:1,losses:2,goalsFor:1.2,goalsAgainst:1.4},statistical:stat});return sendJSON(res,200,{ok:true,engine:"Fanuel Football AI Validator",model:OPENAI_MODEL,ai});}catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
   }
   return sendJSON(res,404,{ok:false,error:"API route not found"});
