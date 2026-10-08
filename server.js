@@ -8,6 +8,9 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const SPORTSCORE_BASE = "https://sportscore.com";
+const SPORTYBET_BASE = "https://www.sportybet.com";
+const SPORTYBET_REGION = process.env.SPORTYBET_REGION || "tz";
+const SPORTYBET_ENABLED = String(process.env.SPORTYBET_ENABLED ?? "true").toLowerCase() !== "false";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 const MAX_AI_DAILY = Math.max(1, Number(process.env.MAX_AI_DAILY || 150));
@@ -125,9 +128,96 @@ function addDays(dateString, days) {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0,10);
 }
+function normalizeBookmakerTeamName(name){
+  return String(name||"")
+    .toLowerCase()
+    .normalize("NFD").replace(/[\\u0300-\\u036f]/g,"")
+    .replace(/\\b(fc|sc|cf|afc|fk|club|sports club|football club)\\b/g,"")
+    .replace(/[^a-z0-9]+/g," ")
+    .trim()
+    .replace(/\\s+/g," ");
+}
+function bookmakerMatchKey(home, away){
+  return normalizeBookmakerTeamName(home)+"|"+normalizeBookmakerTeamName(away);
+}
+function sportBetMarketFlags(event){
+  const flags={oneXTwo:false,draw:false,btts:false};
+  for(const market of event?.markets||[]){
+    const desc=String(market?.desc||"").toLowerCase();
+    if(desc==="1x2"||desc.includes("1x2")) flags.oneXTwo=(market.outcomes||[]).some(o=>o?.isActive!==false);
+    if(desc.includes("gg/ng")||desc.includes("btts")) flags.btts=(market.outcomes||[]).some(o=>o?.isActive!==false);
+  }
+  flags.draw=flags.oneXTwo;
+  return flags;
+}
+async function getSportyBetUpcoming(days=7){
+  if(!SPORTYBET_ENABLED) return {enabled:false,matches:[],byKey:new Map(),count:0,message:"SportyBet filter disabled."};
+  const cacheKey="sportybet:upcoming:"+SPORTYBET_REGION+":"+days;
+  const cached=cacheGet(cacheKey); if(cached) return cached;
+  const timeline=Math.max(24,Math.min(720,days*24));
+  const all=[];
+  for(let page=1;page<=5;page++){
+    const pathApi=`/api/${SPORTYBET_REGION}/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C18%2C10%2C29%2C11%2C26%2C36%2C14%2C60100&pageSize=100&pageNum=${page}&todayGames=false&timeline=${timeline}&_t=${Date.now()}`;
+    try{
+      const data=await (async()=>{
+        const response=await fetch(SPORTYBET_BASE+pathApi,{headers:{
+          Accept:"application/json","Content-Type":"application/json","Current-Country":SPORTYBET_REGION.toUpperCase()
+        }});
+        const raw=await response.text(); let json;
+        try{json=JSON.parse(raw);}catch{throw new Error("SportyBet response is not JSON. HTTP "+response.status);}
+        if(!response.ok) throw new Error(json?.message||json?.error||("SportyBet HTTP "+response.status));
+        return json;
+      })();
+      const tournaments=Array.isArray(data?.data?.tournaments)?data.data.tournaments:[];
+      for(const tournament of tournaments){
+        for(const event of tournament?.events||[]){
+          const home=event?.homeTeamName||event?.home_team_name;
+          const away=event?.awayTeamName||event?.away_team_name;
+          const eventId=String(event?.eventId||event?.id||"");
+          if(!home||!away||!eventId) continue;
+          const ts=Number(event?.estimateStartTime||event?.startTime||0);
+          const flags=sportBetMarketFlags(event);
+          all.push({
+            eventId,homeTeam:home,awayTeam:away,
+            league:tournament?.name||event?.tournamentName||"Football",
+            category:tournament?.categoryName||"",
+            starting_at:Number.isFinite(ts)&&ts?new Date(ts).toISOString():null,
+            oneXTwo:flags.oneXTwo,draw:flags.draw,btts:flags.btts,
+            bookmaker:"SportyBet",bookmakerRegion:SPORTYBET_REGION
+          });
+        }
+      }
+      const total=Number(data?.data?.totalNum||0);
+      if(!tournaments.length || page*100>=total) break;
+    }catch(err){
+      console.log("SportyBet lookup failed:",err.message);
+      break;
+    }
+  }
+  const dedupe=new Map();
+  for(const m of all) dedupe.set(m.eventId,m);
+  const matches=[...dedupe.values()];
+  const byKey=new Map();
+  for(const m of matches) byKey.set(bookmakerMatchKey(m.homeTeam,m.awayTeam),m);
+  const result={enabled:true,matches,byKey,count:matches.length,checkedAt:new Date().toISOString(),message:`${matches.length} SportyBet football events loaded.`};
+  cacheSet(cacheKey,result,2);
+  return result;
+}
+function markSportyBetAvailability(matches, sporty){
+  return (matches||[]).map(m=>{
+    const key=bookmakerMatchKey(m?.homeTeam?.name,m?.awayTeam?.name);
+    const sb=sporty?.byKey?.get(key)||null;
+    m.sportyBetAvailable=Boolean(sb);
+    m.sportyBetEventId=sb?.eventId||null;
+    m.sportyBetMarkets=sb?{oneXTwo:Boolean(sb.oneXTwo),draw:Boolean(sb.draw),btts:Boolean(sb.btts)}:{oneXTwo:false,draw:false,btts:false};
+    m.bookmaker=sb?"SportyBet":null;
+    return m;
+  });
+}
 async function getFixturesWindow(startDate, days = 7) {
   const all = [];
   const seen = new Set();
+  const sporty = await getSportyBetUpcoming(days);
   for (let offset = 0; offset < days; offset++) {
     const date = addDays(startDate, offset);
     try {
@@ -144,12 +234,14 @@ async function getFixturesWindow(startDate, days = 7) {
       console.log("Fixture window lookup failed:", date, e.message);
     }
   }
-  all.sort((a,b) =>
+  const marked = markSportyBetAvailability(all, sporty);
+  marked.sort((a,b) =>
+    Number(b.sportyBetAvailable) - Number(a.sportyBetAvailable) ||
     Number(b.bigLeague) - Number(a.bigLeague) ||
     (b.fixturePriority-a.fixturePriority) ||
     (new Date(a.starting_at||0)-new Date(b.starting_at||0))
   );
-  return all;
+  return marked;
 }
 async function getFixtures(date) {
   const key = "fixtures:" + date;
@@ -339,8 +431,9 @@ async function api(req,res,url){
       const windowMatches=await getFixturesWindow(date,days);
       const matches=windowMatches.slice(0,VIP_CANDIDATES);
       const bigLeagueCount=matches.filter(m=>m.bigLeague).length;
+      const sportyBetCount=matches.filter(m=>m.sportyBetAvailable).length;
       const toDate=addDays(date,days-1);
-      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:false,allMatches:true,priorityMode:"BIG_LEAGUES_FIRST",bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} matches from ${date} through ${toDate}; big leagues are prioritized, while VIP-qualified picks are highlighted first.`});
+      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:false,allMatches:true,priorityMode:"SPORTYBET_AVAILABLE_FIRST_THEN_BIG_LEAGUES",bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,sportyBetCount,bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} matches from ${date} through ${toDate}; SportyBet-listed matches are prioritized, then big leagues; VIP-qualified picks are highlighted first.`});
     }catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
   }
   if(url.pathname==="/api/sportscore-test"||url.pathname==="/api/test"){
