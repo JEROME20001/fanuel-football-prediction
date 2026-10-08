@@ -335,7 +335,7 @@ function confidenceCalibration(rows) {
   return { ready: true, samples: usable.length, multiplier: round(multiplier, 4), calibrationError: round(calibrationError, 2), buckets: detail, reason: "Confidence correction learned from settled predictions." };
 }
 
-function buildFinal(statistical, ai, historyRows = []) {
+function buildFinal(statistical, ai, historyRows = [], forms = null) {
   const calibration = confidenceCalibration(historyRows);
   const e = ensemble(statistical, ai, calibration);
   const final = {
@@ -345,7 +345,7 @@ function buildFinal(statistical, ai, historyRows = []) {
     expectedGoals: statistical.expectedGoals,
     topScores: statistical.topScores,
     correctScore: e.decisionStatus === "NO_STRONG_PICK" ? "N/A" : statistical.topScores?.[0]?.score || "N/A",
-    vip: vipSelection({ ...statistical, ...e }, ai),
+    vip: vipSelection({ ...statistical, ...e, form: forms || null }, ai),
     confidenceMetrics: {
       modelConfidence: e.confidence,
       winProbability: Math.max(e.probabilities.home, e.probabilities.draw, e.probabilities.away),
@@ -385,7 +385,8 @@ function vipSelection(prediction, ai) {
   const aiPick = String(ai?.bestPick || "No Strong Pick");
   const agreement = Number(prediction?.ensemble?.agreement ?? 0);
   const distance = Number(prediction?.ensemble?.distributionDistance ?? 999);
-  const stable = String(prediction?.ensemble?.stability || "") === "STABLE";
+  const stability = String(prediction?.ensemble?.stability || "");
+  const stabilityOK = stability === "STABLE" || stability === "MODERATE";
 
   const homeGames = Number(prediction?.dataQuality?.homeGames || prediction?.form?.home?.games || 0);
   const awayGames = Number(prediction?.dataQuality?.awayGames || prediction?.form?.away?.games || 0);
@@ -394,7 +395,8 @@ function vipSelection(prediction, ai) {
   const dataLevel = String(prediction?.dataQuality?.level || "").toLowerCase();
   const usableData = dataLevel === "high" || dataLevel === "medium";
   const sampleOK = homeGames >= 3 && awayGames >= 3;
-  const venueSampleOK = (homeVenueGames >= 2 || homeGames >= 5) && (awayVenueGames >= 2 || awayGames >= 5);
+  const venueSampleOK = (homeVenueGames === 0 || homeVenueGames >= 2 || homeGames >= 5) &&
+    (awayVenueGames === 0 || awayVenueGames >= 2 || awayGames >= 5);
 
   const oneXTwo = {
     market: "1X2",
@@ -403,19 +405,19 @@ function vipSelection(prediction, ai) {
     margin: round(margin, 1),
     eligible:
       aiActive && usableData && sampleOK && venueSampleOK &&
-      Number(prediction?.confidence || 0) >= 58 &&
-      topProbability >= 53 && margin >= 7 &&
-      agreement >= 80 && aiPick === topPick &&
-      distance <= 12 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
+      Number(prediction?.confidence || 0) >= 56 &&
+      topProbability >= 52 && margin >= 6 &&
+      agreement >= 75 && aiPick === topPick &&
+      distance <= 14 && stabilityOK,
     criteria: {
       aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
-      confidenceMin58: Number(prediction?.confidence || 0) >= 58,
-      probabilityMin53: topProbability >= 53,
-      marginMin7: margin >= 7,
-      agreementMin80: agreement >= 80,
+      confidenceMin56: Number(prediction?.confidence || 0) >= 56,
+      probabilityMin52: topProbability >= 52,
+      marginMin6: margin >= 6,
+      agreementMin75: agreement >= 75,
       aiSamePick: aiPick === topPick,
-      modelDistanceMax12: distance <= 12,
-      stable
+      modelDistanceMax14: distance <= 14,
+      stabilityOK
     }
   };
 
@@ -427,17 +429,17 @@ function vipSelection(prediction, ai) {
     margin: round(drawEdge, 1),
     eligible:
       aiActive && usableData && sampleOK && venueSampleOK &&
-      drawProb >= 30 && drawEdge >= 3 &&
-      aiPick === "Draw" && agreement >= 80 &&
-      distance <= 12 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
+      drawProb >= 29 && drawEdge >= 2 &&
+      aiPick === "Draw" && agreement >= 75 &&
+      distance <= 14 && stabilityOK,
     criteria: {
-      aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
-      probabilityMin30: drawProb >= 30,
-      drawEdgeMin3: drawEdge >= 3,
+      aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      probabilityMin29: drawProb >= 29,
+      drawEdgeMin2: drawEdge >= 2,
       aiDraw: aiPick === "Draw",
-      agreementMin80: agreement >= 80,
-      modelDistanceMax12: distance <= 12,
-      stable
+      agreementMin75: agreement >= 75,
+      modelDistanceMax14: distance <= 14,
+      stabilityOK
     }
   };
 
@@ -457,17 +459,17 @@ function vipSelection(prediction, ai) {
     modelDistance: round(bttsDistance, 1),
     eligible:
       aiActive && usableData && sampleOK && venueSampleOK &&
-      bttsConfidence >= 58 && bttsEdge >= 8 &&
-      aiBttsPick === bttsPick && bttsDistance <= 12 &&
-      agreement >= 80 && (stable || String(prediction?.ensemble?.stability || "") === "MODERATE"),
+      bttsConfidence >= 56 && bttsEdge >= 6 &&
+      aiBttsPick === bttsPick && bttsDistance <= 14 &&
+      agreement >= 75 && stabilityOK,
     criteria: {
-      aiActive, highData, minimumSample: sampleOK, venueSample: venueSampleOK,
-      confidenceMin58: bttsConfidence >= 58,
-      edgeMin8: bttsEdge >= 8,
+      aiActive, usableData, minimumSample: sampleOK, venueSample: venueSampleOK,
+      confidenceMin56: bttsConfidence >= 56,
+      edgeMin6: bttsEdge >= 6,
       aiSameSignal: aiBttsPick === bttsPick,
-      bttsModelDistanceMax12: bttsDistance <= 12,
-      agreementMin80: agreement >= 80,
-      stable
+      bttsModelDistanceMax14: bttsDistance <= 14,
+      agreementMin75: agreement >= 75,
+      stabilityOK
     }
   };
 
