@@ -175,11 +175,11 @@ function sportBetMarketFlags(event){
       .join(" ")
       .toLowerCase();
 
-    if(/(^|\\b)(1x2|1\\s*x\\s*2|match result|full time result)(\\b|$)/i.test(text)){
+    if(/(^|\b)(1x2|1\\s*x\\s*2|match result|full time result)(\b|$)/i.test(text)){
       flags.oneXTwo=true;
       sawMarket=true;
     }
-    if(/(^|\\b)(gg\\s*\/\\s*ng|btts|both teams to score)(\\b|$)/i.test(text)){
+    if(/(^|\b)(gg\\s*\/\\s*ng|btts|both teams to score)(\b|$)/i.test(text)){
       flags.btts=true;
       sawMarket=true;
     }
@@ -225,7 +225,9 @@ function sportBetOddsForEvent(event){
     const outcomes=normalizeOutcomes(market);
     const is1x2=["1","60100","60200"].includes(mid)||/1x2|match result|full time result/.test(desc);
     const isBtts=mid==="29"||/gg\s*\/\s*ng|both teams to score|btts/.test(desc);
-    const isDc=mid==="10"||/double chance/.test(desc);\n    const isDnb=mid==="11"||/draw no bet|dnb/.test(desc);\n    const isTeamScore=mid==="23"||mid==="24"||mid==="30"||/team.*to score|teams.*to score/.test(desc);
+    const isDc=mid==="10"||/double chance/.test(desc);
+    const isDnb=mid==="11"||/draw no bet|dnb/.test(desc);
+    const isTeamScore=mid==="23"||mid==="24"||mid==="30"||/team.*to score|teams.*to score/.test(desc);
     const isTotal=mid==="18"||/over\s*\/\s*under|total goals|over\s*under/.test(desc);
     for(const rawOutcome of outcomes){
       const o=rawOutcome?.outcome&&typeof rawOutcome.outcome==="object"?rawOutcome.outcome:rawOutcome;
@@ -249,7 +251,14 @@ function sportBetOddsForEvent(event){
       }else if(isBtts){
         const pick=/^(yes|gg)\b|\byes\b|\bgg\b/.test(od)?"BTTS YES":/^(no|ng)\b|\bno\b|\bng\b/.test(od)?"BTTS NO":null;
         if(pick) out.btts.push({...item,pick});
-      }else if(isDnb){\n        const id=item.outcomeId;\n        const pick=id==="1"?"Home Win DNB":id==="2"?"Away Win DNB":/\\bhome\\b/.test(od)?"Home Win DNB":/\\baway\\b/.test(od)?"Away Win DNB":null;\n        if(pick) out.drawNoBet.push({...item,pick});\n      }else if(isTeamScore){\n        const teamPick=/\\bhome\\b/.test(od)?"Home To Score":/\\baway\\b/.test(od)?"Away To Score":/\\byes\\b/.test(od)?"Team To Score YES":/\\bno\\b/.test(od)?"Team To Score NO":null;\n        if(teamPick) out.teamToScore.push({...item,pick:teamPick});\n      }else if(isDc){
+      }else if(isDnb){
+        const id=item.outcomeId;
+        const pick=id==="1"?"Home Win DNB":id==="2"?"Away Win DNB":/\bhome\b/.test(od)?"Home Win DNB":/\baway\b/.test(od)?"Away Win DNB":null;
+        if(pick) out.drawNoBet.push({...item,pick});
+      }else if(isTeamScore){
+        const teamPick=/\bhome\b/.test(od)?"Home To Score":/\baway\b/.test(od)?"Away To Score":/\byes\b/.test(od)?"Team To Score YES":/\bno\b/.test(od)?"Team To Score NO":null;
+        if(teamPick) out.teamToScore.push({...item,pick:teamPick});
+      }else if(isDc){
         const pick=/\b1x\b|home\s*\/\s*draw|home\s+or\s+draw/.test(od)?"1X":
           /\bx2\b|draw\s*\/\s*away|draw\s+or\s+away/.test(od)?"X2":
           /\b12\b|home\s*\/\s*away|home\s+or\s+away/.test(od)?"12":null;
