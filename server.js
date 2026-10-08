@@ -15,6 +15,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 const MAX_AI_DAILY = Math.max(1, Number(process.env.MAX_AI_DAILY || 150));
 const VIP_CANDIDATES = Math.max(10, Math.min(150, Number(process.env.VIP_CANDIDATES || 150)));
+const DEEP_ANALYSIS_LIMIT = Math.max(12, Math.min(40, Number(process.env.DEEP_ANALYSIS_LIMIT || 30)));
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -61,7 +62,7 @@ function cacheSet(key, value, minutes) {
 }
 
 async function sportScoreRequest(apiPath) {
-  const response = await fetch(SPORTSCORE_BASE + apiPath, { headers: { Accept: "application/json" } });
+  const response = await fetch(SPORTSCORE_BASE + apiPath, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
   const raw = await response.text();
   let data;
   try { data = JSON.parse(raw); } catch { throw new Error("SportScore response is not JSON. HTTP " + response.status); }
@@ -318,30 +319,47 @@ function findTeamSearchResult(data, wanted) {
 }
 async function getTeamHistory(team) {
   const obj=typeof team === "object" ? team : {name:String(team||"")};
-  const candidates=[obj.slug,obj.team_slug,obj.id,obj.team_id].filter(Boolean).map(String);
+  let candidates=[obj.slug,obj.team_slug,obj.id,obj.team_id].filter(Boolean).map(String);
+
+  async function tryCandidates(list){
+    for(const slug of [...new Set(list)]){
+      const key="team:"+slug, cached=cacheGet(key);
+      if(cached) return cached;
+      const attempts=[
+        `/api/v1/fixtures/?sport=football&team=${encodeURIComponent(slug)}&status=finished&limit=30`,
+        `/api/v1/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`,
+        `/api/widget/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`
+      ];
+      for(const endpoint of attempts){
+        try{
+          const data=await sportScoreRequest(endpoint);
+          const fixtures=extractMatches(data);
+          if(fixtures.length){ cacheSet(key,fixtures,30); return fixtures; }
+        }catch(e){ console.log("Team history attempt failed:",obj.name||slug,e.message); }
+      }
+    }
+    return null;
+  }
+
+  let fixtures=await tryCandidates(candidates);
+  if(fixtures) return fixtures;
+
   if(obj.name){
     try{
-      const found=findTeamSearchResult(await sportScoreRequest(`/api/v1/search/?q=${encodeURIComponent(obj.name)}&sport=football&limit=8`),obj.name);
-      if(found?.slug) candidates.push(found.slug);
+      const found=findTeamSearchResult(
+        await sportScoreRequest(`/api/v1/search/?q=${encodeURIComponent(obj.name)}&sport=football&limit=6`),
+        obj.name
+      );
+      if(found?.slug){
+        fixtures=await tryCandidates([found.slug]);
+        if(fixtures) return fixtures;
+      }
     }catch(e){ console.log("Team search failed:",obj.name,e.message); }
   }
-  for(const slug of [...new Set(candidates)]){
-    const key="team:"+slug, cached=cacheGet(key); if(cached) return cached;
-    const attempts = [
-      `/api/v1/fixtures/?sport=football&team=${encodeURIComponent(slug)}&status=finished&limit=30`,
-      `/api/v1/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`,
-      `/api/widget/team/?sport=football&slug=${encodeURIComponent(slug)}&limit=30`
-    ];
-    for (const endpoint of attempts) {
-      try{
-        const data=await sportScoreRequest(endpoint);
-        const fixtures=extractMatches(data);
-        if (fixtures.length) { cacheSet(key,fixtures,30); return fixtures; }
-      }catch(e){ console.log("Team history attempt failed:",obj.name||slug,e.message); }
-    }
-  }
+  console.log("Team history unavailable:",obj.name||candidates[0]||"Unknown team");
   return [];
 }
+
 function scoreFromRaw(raw){
   const hs=Number(raw?.home_score ?? raw?.homeScore ?? raw?.score?.home ?? raw?.scores?.home ?? raw?.home?.score ?? raw?.scores?.full_time?.home);
   const as=Number(raw?.away_score ?? raw?.awayScore ?? raw?.score?.away ?? raw?.scores?.away ?? raw?.away?.score ?? raw?.scores?.full_time?.away);
@@ -467,7 +485,7 @@ async function api(req,res,url){
       const top150Count=matches.filter(m=>m.top150Team).length;
       const vipCandidateCount=matches.filter(m=>m.vipCandidate).length;
       const toDate=date;
-      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:false,allMatches:true,priorityMode:"SPORTYBET_AVAILABLE_FIRST_THEN_BIG_LEAGUES",bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,sportyBetCount,top150Count,vipCandidateCount,bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} matches for ${date}; SportyBet-listed matches are prioritized, then big leagues; VIP-qualified picks are highlighted first.`});
+      return sendJSON(res,200,{ok:true,provider:"SportScore",requestedDate:date,searchDays:days,fromDate:date,toDate,dailyLimit:150,vvipOnly:false,allMatches:true,priorityMode:"SPORTYBET_AVAILABLE_FIRST_THEN_BIG_LEAGUES",bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,sportyBetCount,top150Count,vipCandidateCount,deepAnalysisLimit:DEEP_ANALYSIS_LIMIT,bigLeagueCount,candidateCount:matches.length,count:matches.length,matches,message:`${matches.length} matches for ${date}; SportyBet-listed matches are prioritized, then big leagues; VIP-qualified picks are highlighted first.`});
     }catch(e){return sendJSON(res,500,{ok:false,error:e.message});}
   }
   if(url.pathname==="/api/sportscore-test"||url.pathname==="/api/test"){
