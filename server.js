@@ -132,14 +132,26 @@ function addDays(dateString, days) {
 function normalizeBookmakerTeamName(name){
   return String(name||"")
     .toLowerCase()
-    .normalize("NFD").replace(/[\\u0300-\\u036f]/g,"")
-    .replace(/\\b(fc|sc|cf|afc|fk|club|sports club|football club)\\b/g,"")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/[’']/g,"")
+    .replace(/\b(fc|sc|cf|afc|fk|club|sports club|football club)\b/gi," ")
+    .replace(/\b(football|soccer)\b/gi," ")
+    .replace(/\b(under[- ]?\d{2}|u\d{2})\b/gi," ")
     .replace(/[^a-z0-9]+/g," ")
     .trim()
-    .replace(/\\s+/g," ");
+    .replace(/\s+/g," ");
 }
 function bookmakerMatchKey(home, away){
   return normalizeBookmakerTeamName(home)+"|"+normalizeBookmakerTeamName(away);
+}
+function teamNamesMatch(a,b){
+  const x=normalizeBookmakerTeamName(a), y=normalizeBookmakerTeamName(b);
+  if(!x || !y) return false;
+  if(x===y) return true;
+  const ax=new Set(x.split(" ")), ay=new Set(y.split(" "));
+  const overlap=[...ax].filter(t=>ay.has(t));
+  const ratio=overlap.length/Math.max(ax.size,ay.size);
+  return ratio >= 0.8 && Math.min(ax.size,ay.size) >= 2;
 }
 const TOP_150_TEAMS = new Set(["Real Madrid","Barcelona","Atletico Madrid","Athletic Bilbao","Real Sociedad","Villarreal","Real Betis","Sevilla","Valencia","Girona","Manchester City","Liverpool","Arsenal","Manchester United","Chelsea","Tottenham Hotspur","Newcastle United","Aston Villa","West Ham United","Brighton","Bayern Munich","Borussia Dortmund","RB Leipzig","Bayer Leverkusen","Eintracht Frankfurt","Stuttgart","Wolfsburg","Mainz","Union Berlin","Borussia Monchengladbach","Inter Milan","AC Milan","Juventus","Napoli","AS Roma","Lazio","Atalanta","Fiorentina","Bologna","Torino","Paris Saint Germain","Marseille","Monaco","Lyon","Lille","Nice","Lens","Rennes","Strasbourg","Nantes","Ajax","PSV Eindhoven","Feyenoord","AZ Alkmaar","Twente","Porto","Benfica","Sporting CP","Braga","Vitoria Guimaraes","Galatasaray","Fenerbahce","Besiktas","Trabzonspor","Basaksehir","Sivasspor","Club Brugge","Anderlecht","Genk","Union Saint Gilloise","Al Nassr","Al Hilal","Al Ittihad","Al Ahli","Al Shabab","Al Ettifaq","Al Qadsiah","Al Gharafa","Al Sadd","Al Duhail","Al Ain","Shabab Al Ahli","Al Jazira","Urawa Red Diamonds","Yokohama F Marinos","Kawasaki Frontale","Vissel Kobe","Gamba Osaka","FC Seoul","Jeonbuk Hyundai Motors","Shanghai Port","Shandong Taishan","Beijing Guoan","Ulsan Hyundai","Pohang Steelers","Daejeon Hana Citizen","Buriram United","Johor Darul Ta'zim","Persib Bandung","Muangthong United","Flamengo","Palmeiras","Botafogo","Fluminense","Atletico Mineiro","Gremio","Internacional","Sao Paulo","Corinthians","Cruzeiro","River Plate","Boca Juniors","Racing Club","Independiente","Estudiantes","Colo Colo","Universidad de Chile","Nacional","Penarol","Olimpia","LA Galaxy","Inter Miami","New York City FC","Seattle Sounders","Los Angeles FC","Atlanta United","CF Montreal","Toronto FC","FC Cincinnati","Columbus Crew","Celtic","Rangers","Red Bull Salzburg","Rapid Vienna","Young Boys","Basel","Dinamo Zagreb","Crvena zvezda","Olympiacos","FCSB","Slavia Prague","Sparta Prague","Shakhtar Donetsk","Dynamo Kyiv","Ferencvaros","Maccabi Tel Aviv","PAOK","Panathinaikos","Freiburg","Maribor"].map(normalizeBookmakerTeamName));
 function isTop150Team(name){
@@ -161,7 +173,7 @@ function sportBetMarketFlags(event){
 }
 async function getSportyBetUpcoming(days=1,targetDate=null){
   if(!SPORTYBET_ENABLED) return {enabled:false,matches:[],byKey:new Map(),count:0,message:"SportyBet filter disabled."};
-  const cacheKey="sportybet:upcoming:"+SPORTYBET_REGION+":"+days;
+  const cacheKey="sportybet:upcoming:"+SPORTYBET_REGION+":"+(targetDate||"all")+":"+days;
   const cached=cacheGet(cacheKey); if(cached) return cached;
   const timeline=720;
   const all=[];
@@ -217,14 +229,30 @@ async function getSportyBetUpcoming(days=1,targetDate=null){
   return result;
 }
 function markSportyBetAvailability(matches, sporty){
+  const byKey=sporty?.byKey instanceof Map ? sporty.byKey : new Map();
+  const sportyMatches=Array.isArray(sporty?.matches) ? sporty.matches : [];
   return (matches||[]).map(m=>{
-    const key=bookmakerMatchKey(m?.homeTeam?.name,m?.awayTeam?.name);
-    const sb=sporty?.byKey?.get(key)||null;
+    const homeName=m?.homeTeam?.name, awayName=m?.awayTeam?.name;
+    const key=bookmakerMatchKey(homeName,awayName);
+    let sb=byKey.get(key)||null;
+
+    // Fuzzy fallback: tolerate FC/SC/CF suffixes, punctuation and minor naming variants.
+    if(!sb){
+      sb=sportyMatches.find(x=>
+        teamNamesMatch(homeName,x?.homeTeam) &&
+        teamNamesMatch(awayName,x?.awayTeam)
+      ) || null;
+    }
+
     m.sportyBetAvailable=Boolean(sb);
-    m.top150Team=isTop150Fixture(m?.homeTeam?.name,m?.awayTeam?.name);
+    m.top150Team=isTop150Fixture(homeName,awayName);
     m.vipCandidate=Boolean(m.sportyBetAvailable && m.top150Team);
     m.sportyBetEventId=sb?.eventId||null;
-    m.sportyBetMarkets=sb?{oneXTwo:Boolean(sb.oneXTwo),draw:Boolean(sb.draw),btts:Boolean(sb.btts)}:{oneXTwo:false,draw:false,btts:false};
+    m.sportyBetMarkets=sb?{
+      oneXTwo:Boolean(sb.oneXTwo),
+      draw:Boolean(sb.draw),
+      btts:Boolean(sb.btts)
+    }:{oneXTwo:false,draw:false,btts:false};
     m.bookmaker=sb?"SportyBet":null;
     return m;
   });
