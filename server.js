@@ -205,45 +205,62 @@ function sportBetMarketFlags(event){
 
 function sportBetOddsForEvent(event){
   const out={oneXTwo:[],btts:[],doubleChance:[],totals:{}};
-  const markets=Array.isArray(event?.markets)?event.markets:[];
-  const activeValue=v=>v!==false&&v!==0&&v!=="0"&&v!=="false"&&v!=="suspended";
-  const push=(o,market)=>({marketId:String(market?.id??""),marketDesc:String(market?.desc||market?.name||""),specifier:market?.specifier||null,outcomeId:String(o?.id??""),outcomeDesc:String(o?.desc||o?.description||o?.name||""),odds:Number(o?.odds)});
-  for(const market of markets){
-    if(!activeValue(market?.status)) continue;
-    const mid=String(market?.id??"");
-    const desc=String(market?.desc||market?.name||market?.description||"").toLowerCase();
-    const outcomes=Array.isArray(market?.outcomes)?market.outcomes:[];
+  const marketsRaw=Array.isArray(event?.markets)?event.markets:
+    Array.isArray(event?.market)?event.market:
+    (event?.markets&&typeof event.markets==="object"?Object.values(event.markets):[]);
+  const activeValue=v=>v!==false&&v!==0&&v!=="0"&&String(v).toLowerCase()!=="false"&&String(v).toLowerCase()!=="suspended";
+  const normalizeMarketId=m=>String(m?.id??m?.marketId??m?.marketID??"");
+  const normalizeDesc=m=>String(m?.desc??m?.description??m?.name??m?.marketName??"").toLowerCase();
+  const normalizeOutcomes=m=>Array.isArray(m?.outcomes)?m.outcomes:
+    Array.isArray(m?.outcome)?m.outcome:
+    (m?.outcomes&&typeof m.outcomes==="object"?Object.values(m.outcomes):[]);
+  for(const market of marketsRaw){
+    if(!activeValue(market?.status??market?.marketStatus)) continue;
+    const mid=normalizeMarketId(market), desc=normalizeDesc(market);
+    const outcomes=normalizeOutcomes(market);
     const is1x2=mid==="1"||/1x2|match result|full time result/.test(desc);
     const isBtts=mid==="29"||/gg\s*\/\s*ng|both teams to score|btts/.test(desc);
     const isDc=mid==="10"||/double chance/.test(desc);
     const isTotal=mid==="18"||/over\s*\/\s*under|total goals|over\s*under/.test(desc);
-    for(const o of outcomes){
-      if(!activeValue(o?.isActive??o?.status)) continue;
-      const od=String(o?.desc||o?.description||o?.name||"").toLowerCase();
-      const item=push(o,market);
-      if(!Number.isFinite(item.odds)||item.odds<=1) continue;
+    for(const rawOutcome of outcomes){
+      const o=rawOutcome?.outcome&&typeof rawOutcome.outcome==="object"?rawOutcome.outcome:rawOutcome;
+      if(!activeValue(o?.isActive??o?.active??o?.status)) continue;
+      const odds=Number(o?.odds??o?.odd??o?.price);
+      if(!Number.isFinite(odds)||odds<=1) continue;
+      const od=String(o?.desc??o?.description??o?.name??o?.outcomeName??"").toLowerCase();
+      const item={
+        marketId:mid,
+        marketDesc:String(market?.desc??market?.description??market?.name??market?.marketName??""),
+        specifier:market?.specifier??market?.spec??null,
+        outcomeId:String(o?.id??o?.outcomeId??""),
+        outcomeDesc:String(o?.desc??o?.description??o?.name??o?.outcomeName??""),
+        odds
+      };
       if(is1x2){
-        const id=String(o?.id??"");
-        const pick=id==="1"?"Home Win":id==="2"?"Draw":id==="3"?"Away Win":/\bhome\b/.test(od)?"Home Win":/\b(draw|tie)\b/.test(od)?"Draw":/\baway\b/.test(od)?"Away Win":null;
+        const id=item.outcomeId;
+        const pick=id==="1"?"Home Win":id==="2"?"Draw":id==="3"?"Away Win":
+          /\bhome\b/.test(od)?"Home Win":/\b(draw|tie)\b/.test(od)?"Draw":/\baway\b/.test(od)?"Away Win":null;
         if(pick) out.oneXTwo.push({...item,pick});
       }else if(isBtts){
         const pick=/^(yes|gg)\b|\byes\b|\bgg\b/.test(od)?"BTTS YES":/^(no|ng)\b|\bno\b|\bng\b/.test(od)?"BTTS NO":null;
         if(pick) out.btts.push({...item,pick});
       }else if(isDc){
-        const pick=/\b1x\b|home\s*\/\s*draw|home\s+or\s+draw/.test(od)?"1X":/\bx2\b|draw\s*\/\s*away|draw\s+or\s+away/.test(od)?"X2":/\b12\b|home\s*\/\s*away|home\s+or\s+away/.test(od)?"12":null;
+        const pick=/\b1x\b|home\s*\/\s*draw|home\s+or\s+draw/.test(od)?"1X":
+          /\bx2\b|draw\s*\/\s*away|draw\s+or\s+away/.test(od)?"X2":
+          /\b12\b|home\s*\/\s*away|home\s+or\s+away/.test(od)?"12":null;
         if(pick) out.doubleChance.push({...item,pick});
       }else if(isTotal){
-        const m=String(market?.specifier||"").match(/total=([0-9]+(?:\.[0-9]+)?)/i);
+        const spec=String(item.specifier||"");
+        const sm=spec.match(/total\s*=\s*([0-9]+(?:\.[0-9]+)?)/i);
         const lm=od.match(/(?:over|under)\s*([0-9]+(?:\.[0-9]+)?)/i);
-        const line=m?m[1]:(lm?lm[1]:null);
+        const line=sm?sm[1]:(lm?lm[1]:null);
         const pick=/\bunder\b/.test(od)?"Under "+line:/\bover\b/.test(od)?"Over "+line:null;
-        if(line&&pick){if(!out.totals[line]) out.totals[line]=[];out.totals[line].push({...item,pick});}
+        if(line&&pick){if(!out.totals[line])out.totals[line]=[];out.totals[line].push({...item,pick});}
       }
     }
   }
   return out;
 }
-
 function sportBetTimestamp(value){
   const n=Number(value);
   if(!Number.isFinite(n) || n<=0) return null;
@@ -683,8 +700,19 @@ function dailyOdds15Candidates(predictions){
   for(const x of rows){const key=x.fixtureId+"|"+x.market+"|"+x.pick;const old=best.get(key);if(!old||x.safetyScore>old.safetyScore)best.set(key,x);}
   return [...best.values()].sort((a,b)=>b.safetyScore-a.safetyScore);
 }
-function buildDailyOdds15(date,predictions){
-  const all=dailyOdds15Candidates(predictions);
+async function buildDailyOdds15(date,predictions){
+  const sporty=await getSportyBetUpcoming(1,date);
+  const sportyMatches=Array.isArray(sporty?.matches)?sporty.matches:[];
+  const enriched=(predictions||[]).map(p=>{
+    if(p?.sportyBetOdds && ((p.sportyBetOdds.oneXTwo||[]).length || (p.sportyBetOdds.btts||[]).length || (p.sportyBetOdds.doubleChance||[]).length || Object.keys(p.sportyBetOdds.totals||{}).length)) return p;
+    const home=p?.homeTeam||p?.home?.name||"", away=p?.awayTeam||p?.away?.name||"";
+    const sb=sportyMatches.find(x=>
+      (String(p?.sportyBetEventId||"") && String(x?.eventId||"")===String(p.sportyBetEventId||"")) ||
+      (teamNamesMatch(home,x?.homeTeam)&&teamNamesMatch(away,x?.awayTeam))
+    );
+    return sb?{...p,sportyBetOdds:sb.odds||{oneXTwo:[],btts:[],doubleChance:[],totals:{}},sportyBetEventId:sb.eventId}:p;
+  });
+  const all=dailyOdds15Candidates(enriched);
   const pool=all.filter(x=>x.odds<=3.5&&x.probability>=58).slice(0,50);
   let best=null;
   const dfs=(start,chosen,product,safety,used)=>{
@@ -705,6 +733,8 @@ function buildDailyOdds15(date,predictions){
   dfs(0,[],1,0,new Set());
   if(!best)return {
     eligible:false,date,selections:[],totalOdds:null,candidateCount:all.length,
+    sportyBetEventsChecked:sportyMatches.length,
+    sportyBetEventsWithOdds:sportyMatches.filter(x=>x?.odds && (((x.odds.oneXTwo||[]).length)+((x.odds.btts||[]).length)+((x.odds.doubleChance||[]).length)+Object.values(x.odds.totals||{}).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0))>0).length),
     message:"Hakuna combination ya selections 5 yenye odds karibu 15.00 bila kuongeza selection yenye risk kubwa. Mfumo haujalazimisha slip."
   };
   return {
