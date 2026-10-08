@@ -374,7 +374,18 @@ function attachAI(result,ai){result.ai={enabled:Boolean(ai.enabled),model:ai.mod
 async function analyze(fixtureId,suppliedMatch){
   let fixture;
   if(suppliedMatch&&typeof suppliedMatch==="object"){
-    const raw=suppliedMatch.raw||suppliedMatch; fixture=normalizeMatch(raw); fixture.id=String(suppliedMatch.id||suppliedMatch.slug||raw.id||raw.slug||raw.match_id||raw.fixture_id||fixture.id||("auto-"+fixture.homeTeam.name+"-"+fixture.awayTeam.name+"-"+Date.now())); fixture.slug=suppliedMatch.slug||raw.slug||fixture.id; fixture.raw=raw;
+    const raw=suppliedMatch.raw||suppliedMatch;
+    const suppliedSportyAvailable = suppliedMatch.sportyBetAvailable === true;
+    const suppliedSportyMarkets = suppliedMatch.sportyBetMarkets || null;
+    const suppliedSportyEventId = suppliedMatch.sportyBetEventId || null;
+    fixture=normalizeMatch(raw);
+    fixture.id=String(suppliedMatch.id||suppliedMatch.slug||raw.id||raw.slug||raw.match_id||raw.fixture_id||fixture.id||("auto-"+fixture.homeTeam.name+"-"+fixture.awayTeam.name+"-"+Date.now()));
+    fixture.slug=suppliedMatch.slug||raw.slug||fixture.id;
+    fixture.raw=raw;
+    fixture.sportyBetAvailable=suppliedSportyAvailable;
+    fixture.sportyBetMarkets=suppliedSportyMarkets;
+    fixture.sportyBetEventId=suppliedSportyEventId;
+    fixture.bookmaker=suppliedSportyAvailable ? "SportyBet" : null;
   }else fixture=await getFixture(fixtureId);
   if(!fixture.homeTeam.name||!fixture.awayTeam.name) throw new Error("SportScore haikurudisha home/away teams.");
   const existingPrediction = [...db.predictions].reverse().find(p => String(p.fixtureId) === String(fixture.id));
@@ -427,7 +438,7 @@ function calibrationBuckets(rows){const b={"50-59":{count:0,correct:0,avgConfide
 async function api(req,res,url){
   if(url.pathname==="/api/health")return sendJSON(res,200,{ok:true,provider:"SportScore",tokenConfigured:true,aiConfigured:Boolean(OPENAI_API_KEY),aiModel:OPENAI_MODEL,vipOnly:false,bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,vipCandidates:VIP_CANDIDATES,service:"Fanuel Football Prediction",engine:"v4-multi-model-calibrated",serverTime:new Date().toISOString()});
   if(url.pathname==="/api/ai-health")return sendJSON(res,200,{ok:true,configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,message:OPENAI_API_KEY?"OpenAI football AI is configured.":"OPENAI_API_KEY haijawekwa kwenye Render."});
-  if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length,storedTotal:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length-rows.length)},calibrationReady:rows.length>=10,vipOnly:false,bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,vipCandidates:VIP_CANDIDATES,vipCriteria:{markets:["1X2","DRAW","BTTS"],aiActive:true,bookmaker:"SportyBet",dataQuality:["HIGH","MEDIUM"],minimumSample:3,venueFallback:true,oneXTwo:{confidenceMin:56,topProbabilityMin:52,marginMin:6,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"]},draw:{probabilityMin:29,drawEdgeMin:2,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"]},btts:{confidenceMin:56,edgeMin:6,modelDistanceMax:14,agreementMin:75,stability:["STABLE","MODERATE"]}},engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","VIP gate","correct-score distribution"],oddsUsed:false});}
+  if(url.pathname==="/api/system-status"){const rows=historyRows();return sendJSON(res,200,{ok:true,provider:"SportScore",ai:{configured:Boolean(OPENAI_API_KEY),model:OPENAI_MODEL,usage:aiUsageToday()},predictions:{total:db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length,storedTotal:db.predictions.length,settled:rows.length,pending:Math.max(0,db.predictions.filter(p=>p.vip?.eligible===true||p.vvip?.eligible===true).length-rows.length)},calibrationReady:rows.length>=10,vipOnly:false,bookmaker:"SportyBet",sportyBetEnabled:SPORTYBET_ENABLED,vipCandidates:VIP_CANDIDATES,vipCriteria:{markets:["1X2","DRAW","BTTS"],aiActive:true,bookmaker:"SportyBet",dataQuality:["HIGH","MEDIUM"],minimumSample:3,venueFallback:true,oneXTwo:{confidenceMin:56,topProbabilityMin:52,marginMin:6,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"],requiresSportyBet1X2:true},draw:{probabilityMin:29,drawEdgeMin:2,agreementMin:75,distributionDistanceMax:14,stability:["STABLE","MODERATE"]},btts:{confidenceMin:56,edgeMin:6,modelDistanceMax:14,agreementMin:75,stability:["STABLE","MODERATE"],requiresSportyBetGGNG:true}},engine:"Fanuel Advanced Multi-Model v4",layers:["team strength","home/away specialist","recent form","opponent-adjusted when available","goal probabilities","AI validation","ensemble","calibration","NO STRONG PICK","VIP gate","correct-score distribution"],oddsUsed:false});}
   if(url.pathname==="/api/upcoming"){
     const date=url.searchParams.get("date")||new Date().toISOString().slice(0,10);
     const days=Math.max(1,Math.min(7,Number(url.searchParams.get("days")||7)));
