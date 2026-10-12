@@ -670,8 +670,29 @@ async function analyze(fixtureId,suppliedMatch,options={}){
     });
     if(!ai?.enabled) throw new Error(ai?.status || "AI validation unavailable");
   }catch(e){
-    console.log("OpenAI deep-analysis error:",e.message);
-    throw new Error("AI Deep Analysis unavailable: " + e.message);
+    // AI is an optional validator, never a hard dependency for predictions.
+    // If OpenAI is out of credits, unconfigured, or temporarily unavailable,
+    // continue with the local statistical model and clearly label the result.
+    console.log("OpenAI deep-analysis error; continuing statistical-only:",e.message);
+    const p = statistical.probabilities || {};
+    const ordered = [["Home Win",Number(p.home||0)],["Draw",Number(p.draw||0)],["Away Win",Number(p.away||0)]].sort((a,b)=>b[1]-a[1]);
+    ai = {
+      enabled:false,
+      model:OPENAI_MODEL || null,
+      status:"AI unavailable; statistical-only prediction used: " + String(e.message||"AI request failed").slice(0,240),
+      bestPick:statistical.pick || ordered[0]?.[0] || "No Strong Pick",
+      confidence:Number(statistical.confidence || ordered[0]?.[1] || 0),
+      homeProbability:Number(p.home || 0),
+      drawProbability:Number(p.draw || 0),
+      awayProbability:Number(p.away || 0),
+      over25Probability:Number(statistical.over25 || 0),
+      bttsProbability:Number(statistical.btts || 0),
+      correctScore:statistical.topScores?.[0]?.score || "N/A",
+      factors:["AI validation unavailable","Local statistical model used","Confidence depends on available match history"],
+      analysis:"AI haipatikani kwa sasa. Utabiri huu umetolewa na injini ya takwimu ya Fanuel; ubora wake unategemea historia ya timu iliyopatikana.",
+      risk:"STATISTICAL ONLY",
+      statisticalOnly:true
+    };
   }
   const result=engine.buildFinal(statistical,ai,historyRows(),{home:homeForm,away:awayForm});
   result.form={home:homeForm,away:awayForm};
